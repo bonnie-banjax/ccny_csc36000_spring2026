@@ -1,35 +1,32 @@
-**Edit a file, create a new file, and clone from Bitbucket in under 2 minutes**
+## CSC 36000: Modern Distributed Computing (Spring 2026)
 
-When you're done, you can delete the content in this README and update the file with details for others getting started with your repository.
-
-*We recommend that you open this README in another tab as you perform the tasks below. You can [watch our video](https://youtu.be/0ocf7u76WSo) for a full demo of all the steps in this tutorial. Open the video in a new tab to avoid leaving Bitbucket.*
-
----
-
-## Edit a file
-
-You’ll start by editing this README file to learn how to edit a file in Bitbucket.
-
-1. Click **Source** on the left side.
-2. Click the README.md link from the list of files.
-3. Click the **Edit** button.
-4. Delete the following text: *Delete this line to make a change to the README from Bitbucket.*
-5. After making your change, click **Commit** and then **Commit** again in the dialog. The commit page will open and you’ll see the change you just made.
-6. Go back to the **Source** page.
+**Course Overview**
+Title: Modern Distributed Computing
+Level: Undergraduate (CS upper-division)
+Format: 14 weeks • 1 class/week (2.5 hours)
+Programming: Python
+Group Lab: One semester-long project (teams of 4 or 5) with tri-weekly feature increments.  Group labs are 50% of your grade
 
 ---
 
-## Create a file
+**Course description**
+An overview of modern distributed computing. Students develop an understanding of basic models of networking, parallel, and distributed computing technologies and learn fundamentals of networking components and their applications. The course covers examples of parallel and distributed computing such as cloud and web services, computation grids/clusters, and edge computing. It includes both asynchronous and synchronous message passing, global snapshot algorithms and their applications, and synchronization algorithms.
 
-Next, you’ll add a new file to this repository.
+---
 
-1. Click the **New file** button at the top of the **Source** page.
-2. Give the file a filename of **contributors.txt**.
-3. Enter your name in the empty file space.
-4. Click **Commit** and then **Commit** again in the dialog.
-5. Go back to the **Source** page.
+## Purpose of this REPO
 
-Before you move on, go ahead and explore the repository. You've already seen the **Source** page, but check out the **Commits**, **Branches**, and **Settings** pages.
+The purpose of this repository is for the instructor to share code with the entire class.  Students will not be able to push (write) to this repo unless specifically requested by instructor.  Students will be able to clone or pull (read) from this repository only
+
+--- 
+## Group Projects
+
+1. In the **1st week**, instructor will create groups of 4 or 5 by randomly adding students to the group.
+2. Each group must choose a team lead every week who will be in charge their own repo.
+3. The team lead for week 1 is responsible for create a new private REPO for the group and granting the instructor and all members of the group read and write access to the REPO.  The instructor's email is kbrown6@ccny.cuny.edu
+4. Each student must write all their code on their [own branch](https://support.atlassian.com/bitbucket-cloud/docs/branch-a-repository/) in the REPO.  Your branch name should be the email alias.  For example, if your email is kbrown6@ccny.cuny.edu, your branch name should be kbrown6.  Your branch should be created from the main branch.
+5. Individual and group coding assignments will be submitted to your branch which will show clearly your contributions
+6. For group projects, you will create a branch with your email alias and the feature you are assigned to implement.  For example, if the feature is "Implement Counter for each node", your branch could be kbrown/implement_counter.  Each student must create a pull request to merge their feature to the main branch.  The team lead for the week is responsible for apporving the pull request to merge the code.
 
 ---
 
