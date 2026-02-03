@@ -122,6 +122,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     t0 = time.perf_counter()
 
     per_node_results: List[Dict[str, Any]] = []
+    node_errors: List[Dict[str, Any]] = []      # HANDLE SECONDARY NODE CRASHES 
     total_primes = 0
     primes_sample: List[int] = []
     primes_truncated = False
@@ -169,7 +170,12 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     with ThreadPoolExecutor(max_workers=min(32, len(nodes_sorted))) as ex:
         futs = [ex.submit(call_node, node, sl) for node, sl in zip(nodes_sorted, slices)]
         for f in as_completed(futs):
-            per_node_results.append(f.result())
+            try:                                    # HANDLE SECONDARY NODES FAILING 
+                per_node_results.append(f.result())
+            except Exception as e:
+                msg = str(e)
+                print(f"[primary_node] WARNING: secondary failed: {msg}")
+                node_errors.append({"error": msg})
 
     per_node_results.sort(key=lambda r: r["slice"][0])
 
