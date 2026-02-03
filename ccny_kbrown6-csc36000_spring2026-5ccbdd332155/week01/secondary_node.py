@@ -293,7 +293,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path == "/health":
+        if parsed.path == "/health":                                       #TODO
             return self._send_json({"ok": True, "status": "healthy"})
         if parsed.path == "/info":
             return self._send_json({"ok": True, "node": NODE_META})
@@ -337,7 +337,7 @@ class Handler(BaseHTTPRequestHandler):
         include_per_chunk = bool(payload.get("include_per_chunk", False))
 
         try:
-            resp = compute_partitioned(
+            resp = compute_partitioned(                                    #TODO
                 low, high,
                 mode=mode,
                 chunk=chunk,

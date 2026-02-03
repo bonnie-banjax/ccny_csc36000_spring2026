@@ -9,8 +9,8 @@ Primary coordinator that:
 
 Endpoints
 ---------
-GET  /health
-GET  /nodes
+GET /health
+GET /nodes
 POST /register
 POST /compute
 """
@@ -30,34 +30,34 @@ from urllib.parse import urlparse
 
 class Registry:
     def __init__(self, ttl_s: int = 3600):
-        self.ttl_s = ttl_s
-        self.lock = threading.Lock()
-        self.nodes: Dict[str, Dict[str, Any]] = {}
+      self.ttl_s = ttl_s
+      self.lock = threading.Lock()
+      self.nodes: Dict[str, Dict[str, Any]] = {}
 
     def upsert(self, node: Dict[str, Any]) -> Dict[str, Any]:
-        node_id = str(node["node_id"])
-        now = time.time()
-        record = {
-            "node_id": node_id,
-            "host": str(node["host"]),
-            "port": int(node["port"]),
-            "cpu_count": int(node.get("cpu_count", 1)),
-            "last_seen": float(node.get("ts", now)),
-            "registered_at": now,
-        }
-        with self.lock:
-            if node_id in self.nodes:
-                record["registered_at"] = self.nodes[node_id].get("registered_at", now)
-            self.nodes[node_id] = record
-            return record
+      node_id = str(node["node_id"])
+      now = time.time()
+      record = {
+        "node_id": node_id,
+        "host": str(node["host"]),
+        "port": int(node["port"]),
+        "cpu_count": int(node.get("cpu_count", 1)),
+        "last_seen": float(node.get("ts", now)),
+        "registered_at": now,
+      }
+      with self.lock:
+        if node_id in self.nodes:
+          record["registered_at"] = self.nodes[node_id].get("registered_at", now)
+        self.nodes[node_id] = record
+        return record
 
     def active_nodes(self) -> List[Dict[str, Any]]:
-        now = time.time()
-        with self.lock:
-            stale = [nid for nid, rec in self.nodes.items() if (now - float(rec.get("last_seen", 0))) > self.ttl_s]
-            for nid in stale:
-                del self.nodes[nid]
-            return list(self.nodes.values())
+      now = time.time()
+      with self.lock:
+        stale = [nid for nid, rec in self.nodes.items() if (now - float(rec.get("last_seen", 0))) > self.ttl_s]
+        for nid in stale:
+          del self.nodes[nid]
+        return list(self.nodes.values())
 
 
 REGISTRY = Registry(ttl_s=120)
@@ -68,51 +68,81 @@ def _post_json(url: str, payload: Dict[str, Any], timeout_s: int = 60) -> Dict[s
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+      return json.loads(resp.read().decode("utf-8"))
 
 
 def split_into_slices(low: int, high: int, n: int) -> List[Tuple[int, int]]:
     if n <= 0:
-        return []
+      return []
     total = high - low
     base = total // n
     rem = total % n
     out = []
     start = low
     for i in range(n):
-        size = base + (1 if i < rem else 0)
-        end = start + size
-        if start < end:
-            out.append((start, end))
-        start = end
+      size = base + (1 if i < rem else 0)
+      end = start + size
+      if start < end:
+        out.append((start, end))
+      start = end
     return out
 
+def _check_node_health(node: Dict[str, Any], timeout_sL float = 2.0) -> bool:
+    """ Returns True if node /health responds with 200 OK within timeout. """
+    url = f"http://{node['host']}:{node['port']}/health"
+    try:
+      with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+        return resp.getcode() == 200
+    except Exception:
+      return False
 
 def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     low = int(payload["low"])
     high = int(payload["high"])
     if high <= low:
-        raise ValueError("high must be > low")
+      raise ValueError("high must be > low")
 
     mode = str(payload.get("mode", "count"))
     if mode not in ("count", "list"):
-        raise ValueError("mode must be 'count' or 'list'")
-    
+      raise ValueError("mode must be 'count' or 'list'")
+
     sec_exec = str(payload.get("secondary_exec", "processes"))
     if sec_exec not in ("single", "threads", "processes"):
-        raise ValueError("secondary_exec must be single|threads|processes")
+      raise ValueError("secondary_exec must be single|threads|processes")
 
     sec_workers = payload.get("secondary_workers", None)
     if sec_workers is not None:
-        sec_workers = int(sec_workers)
+      sec_workers = int(sec_workers)
 
     max_return_primes = int(payload.get("max_return_primes", 5000))
     include_per_node = bool(payload.get("include_per_node", False))
 
     nodes = REGISTRY.active_nodes()
-    if not nodes:
-        raise ValueError("no active secondary nodes registered")
-    
+
+################################################################################
+##                                                                            ##
+    alive_nodes = []
+
+    with ThreadPoolExecutor(max_workers=len(nodes)) as probe_ex:
+      probe_futs = {probe_ex.submit(_check_node_health, n): n for n in nodes}
+      for f in as_completed(probe_futs):
+        node_record = probe_futs[f]
+        try:
+          if f.result():
+            alive_nodes.append(node_record)
+          else:
+            print(f"[primary_node] Probe failed for node {node_record['node_id']}")
+            REGISTRY.nodes.pop(node_record['node_id'], None)
+        except Exception as e:
+          print(f"[primary_node] Exception probing {node_record['node_id']}: {e}")
+
+    if not alive_nodes:
+      raise ValueError("All registered nodes failed liveness probe.")
+
+    nodes = alive_nodes
+##                                                                            ##
+################################################################################
+
     chunk = int(payload.get("chunk", 500_000))
 
     nodes_sorted = sorted(nodes, key=lambda n: n["node_id"])
@@ -128,90 +158,116 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     max_prime = -1
 
     def call_node(node: Dict[str, Any], sl: Tuple[int, int]) -> Dict[str, Any]:
-        host = node["host"]
-        port = node["port"]
-        url = f"http://{host}:{port}/compute"
-        req = {
-            "low": sl[0],
-            "high": sl[1],
-            "mode": mode,
-            "chunk": chunk,
-            "exec": sec_exec,
-            "workers": sec_workers,
-            "max_return_primes": max_return_primes if mode == "list" else 0,
-            "include_per_chunk": False,
-        }
-        req = {k: v for k, v in req.items() if v is not None}
+      host = node["host"]
+      port = node["port"]
+      url = f"http://{host}:{port}/compute"
+      req = {
+        "low": sl[0],
+        "high": sl[1],
+        "mode": mode,
+        "chunk": chunk,
+        "exec": sec_exec,
+        "workers": sec_workers,
+        "max_return_primes": max_return_primes if mode == "list" else 0,
+        "include_per_chunk": False,
+      }
+      req = {k: v for k, v in req.items() if v is not None}
 
-        t_call0 = time.perf_counter()
-        resp = _post_json(url, req, timeout_s=3600)
-        t_call1 = time.perf_counter()
+      t_call0 = time.perf_counter()
+      resp = _post_json(url, req, timeout_s=3600)
+      t_call1 = time.perf_counter()
 
-        if not resp.get("ok"):
-            raise RuntimeError(f"node {node['node_id']} error: {resp}")
-        
-        node_elapsed_s = float(resp.get("elapsed_seconds", 0.0))
-        print(f"Node ID: {node["node_id"]} completed in: {node_elapsed_s}")
+      if not resp.get("ok"):
+        raise RuntimeError(f"node {node['node_id']} error: {resp}")
 
-        return {
-            "node_id": node["node_id"],
-            "node": {"host": host, "port": port, "cpu_count": node.get("cpu_count", 1)},
-            "slice": list(sl),
-            "round_trip_s": t_call1 - t_call0,
-            "node_elapsed_s": node_elapsed_s,
-            "node_sum_chunk_s": float(resp.get("sum_chunk_compute_seconds", 0.0)),
-            "total_primes": int(resp.get("total_primes", 0)),
-            "max_prime": int(resp.get("max_prime", -1)),
-            "primes": resp.get("primes", None),
-            "primes_truncated": bool(resp.get("primes_truncated", False)),
-        }
+      node_elapsed_s = float(resp.get("elapsed_seconds", 0.0))
+      print(f"Node ID: {node["node_id"]} completed in: {node_elapsed_s}")
+
+      return {
+        "node_id": node["node_id"],
+        "node": {"host": host, "port": port, "cpu_count": node.get("cpu_count", 1)},
+        "slice": list(sl),
+        "round_trip_s": t_call1 - t_call0,
+        "node_elapsed_s": node_elapsed_s,
+        "node_sum_chunk_s": float(resp.get("sum_chunk_compute_seconds", 0.0)),
+        "total_primes": int(resp.get("total_primes", 0)),
+        "max_prime": int(resp.get("max_prime", -1)),
+        "primes": resp.get("primes", None),
+        "primes_truncated": bool(resp.get("primes_truncated", False)),
+      }
+
+################################################################################
+##                                                                            ##
+    failed_slices = []
+    partial_failure = False
 
     with ThreadPoolExecutor(max_workers=min(32, len(nodes_sorted))) as ex:
-        futs = [ex.submit(call_node, node, sl) for node, sl in zip(nodes_sorted, slices)]
-        for f in as_completed(futs):
-            per_node_results.append(f.result())
+    futs = {ex.submit(call_node, node, sl): (node, sl) for node, sl in zip(nodes_sorted, slices)}
+      for f in as_completed(futs):
+        node, sl = futs[f]
+        try:
+          result = f.result()
+          per_node_results.append(result)
+        except Exception as e:
+          partial_failure = True
+          print(f"[primary_node] Node {node['node_id']} failed slice {sl}: {e}")
+          failed_slices.append({
+            "node_id": node['node_id'],
+            "slice": list(sl),
+            "error": str(e)
+          })
+##                                                                            ##
+################################################################################
 
     per_node_results.sort(key=lambda r: r["slice"][0])
 
     for r in per_node_results:
-        total_primes += int(r["total_primes"])
-        max_prime = max(max_prime, int(r["max_prime"]))
-        if mode == "list" and r.get("primes") is not None:
-            ps = list(r["primes"])
-            if len(primes_sample) < max_return_primes:
-                remaining = max_return_primes - len(primes_sample)
-                primes_sample.extend(ps[:remaining])
-                if len(ps) > remaining:
-                    primes_truncated = True
-            else:
-                primes_truncated = True
-            if r.get("primes_truncated"):
-                primes_truncated = True
+      total_primes += int(r["total_primes"])
+      max_prime = max(max_prime, int(r["max_prime"]))
+      if mode == "list" and r.get("primes") is not None:
+        ps = list(r["primes"])
+        if len(primes_sample) < max_return_primes:
+          remaining = max_return_primes - len(primes_sample)
+          primes_sample.extend(ps[:remaining])
+          if len(ps) > remaining:
+            primes_truncated = True
+        else:
+          primes_truncated = True
+        if r.get("primes_truncated"):
+          primes_truncated = True
 
     t1 = time.perf_counter()
 
+################################################################################
+##                                                                            ##
     resp: Dict[str, Any] = {
-        "ok": True,
-        "mode": mode,
-        "range": [low, high],
-        "nodes_used": len(nodes_sorted),
-        "secondary_exec": sec_exec,
-        "secondary_workers": sec_workers,
-        "chunk": chunk,
-        "total_primes": total_primes,
-        "max_prime": max_prime,
-        "elapsed_seconds": t1 - t0,
-        "sum_node_compute_seconds": sum(float(r["node_elapsed_s"]) for r in per_node_results),
-        "sum_node_round_trip_seconds": sum(float(r["round_trip_s"]) for r in per_node_results),
+      "ok": True,
+      "partial_failure": partial_failure,
+      "failed_slices": failed_slices,
+      "mode": mode,
+      "range": [low, high],
+      "nodes_used": len(nodes_sorted),
+      "nodes_responded": len(per_node_results),
+      "secondary_exec": sec_exec,
+      "secondary_workers": sec_workers,
+      "chunk": chunk,
+      "total_primes": total_primes,
+      "max_prime": max_prime,
+      "elapsed_seconds": t1 - t0,
+
+      "sum_node_compute_seconds": sum(float(r["node_elapsed_s"]) for r in per_node_results),
+      "sum_node_round_trip_seconds": sum(float(r["round_trip_s"]) for r in per_node_results),
     }
+##                                                                            ##
+################################################################################
 
     if mode == "list":
-        resp["primes"] = primes_sample
-        resp["primes_truncated"] = primes_truncated
-        resp["max_return_primes"] = max_return_primes
+      resp["primes"] = primes_sample
+      resp["primes_truncated"] = primes_truncated
+      resp["max_return_primes"] = max_return_primes
 
     if include_per_node:
-        resp["per_node"] = per_node_results
+      resp["per_node"] = per_node_results
 
     return resp
 
@@ -220,58 +276,58 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "PrimaryPrimeCoordinator/1.0"
 
     def _send_json(self, obj: Dict[str, Any], code: int = 200) -> None:
-        data = json.dumps(obj).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+      data = json.dumps(obj).encode("utf-8")
+      self.send_response(code)
+      self.send_header("Content-Type", "application/json")
+      self.send_header("Content-Length", str(len(data)))
+      self.end_headers()
+      self.wfile.write(data)
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path == "/health":
-            return self._send_json({"ok": True, "status": "healthy"})
-        if parsed.path == "/nodes":
-            nodes = REGISTRY.active_nodes()
-            nodes.sort(key=lambda n: n["node_id"])
-            return self._send_json({"ok": True, "nodes": nodes, "ttl_s": REGISTRY.ttl_s})
-        return self._send_json({"ok": False, "error": "not found"}, code=404)
+      parsed = urlparse(self.path)
+      if parsed.path == "/health":
+        return self._send_json({"ok": True, "status": "healthy"})
+      if parsed.path == "/nodes":
+        nodes = REGISTRY.active_nodes()
+        nodes.sort(key=lambda n: n["node_id"])
+        return self._send_json({"ok": True, "nodes": nodes, "ttl_s": REGISTRY.ttl_s})
+      return self._send_json({"ok": False, "error": "not found"}, code=404)
 
     def do_POST(self):
-        parsed = urlparse(self.path)
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except Exception:
-            return self._send_json({"ok": False, "error": "invalid content-length"}, code=400)
+      parsed = urlparse(self.path)
+      try:
+        length = int(self.headers.get("Content-Length", "0"))
+      except Exception:
+        return self._send_json({"ok": False, "error": "invalid content-length"}, code=400)
 
-        body = self.rfile.read(length) if length > 0 else b"{}"
+      body = self.rfile.read(length) if length > 0 else b"{}"
+      try:
+        payload = json.loads(body.decode("utf-8") or "{}")
+      except Exception as e:
+        return self._send_json({"ok": False, "error": f"bad json: {e}"}, code=400)
+
+      if parsed.path == "/register":
+        for k in ("node_id", "host", "port"):
+          if k not in payload:
+            return self._send_json({"ok": False, "error": f"missing field: {k}"}, code=400)
+        rec = REGISTRY.upsert(payload)
+        print(f"[primary_node] Added node: {payload} to registry")
+        return self._send_json({"ok": True, "node": rec})
+
+      if parsed.path == "/compute":
         try:
-            payload = json.loads(body.decode("utf-8") or "{}")
+          for k in ("low", "high"):
+            if k not in payload:
+              raise ValueError(f"missing field: {k}")
+          resp = distributed_compute(payload)
+          return self._send_json(resp, code=200)
         except Exception as e:
-            return self._send_json({"ok": False, "error": f"bad json: {e}"}, code=400)
+          return self._send_json({"ok": False, "error": str(e)}, code=400)
 
-        if parsed.path == "/register":
-            for k in ("node_id", "host", "port"):
-                if k not in payload:
-                    return self._send_json({"ok": False, "error": f"missing field: {k}"}, code=400)
-            rec = REGISTRY.upsert(payload)
-            print(f"[primary_node] Added node: {payload} to registry")
-            return self._send_json({"ok": True, "node": rec})
-
-        if parsed.path == "/compute":
-            try:
-                for k in ("low", "high"):
-                    if k not in payload:
-                        raise ValueError(f"missing field: {k}")
-                resp = distributed_compute(payload)
-                return self._send_json(resp, code=200)
-            except Exception as e:
-                return self._send_json({"ok": False, "error": str(e)}, code=400)
-
-        return self._send_json({"ok": False, "error": "not found"}, code=404)
+      return self._send_json({"ok": False, "error": "not found"}, code=404)
 
     def log_message(self, fmt, *args):
-        return
+      return
 
 
 def main() -> None:
@@ -286,18 +342,18 @@ def main() -> None:
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"[primary_node] listening on http://{args.host}:{args.port}")
-    print("  GET  /health")
-    print("  GET  /nodes")
-    print("  POST /register")
-    print("  POST /compute")
+    print(" GET /health")
+    print(" GET /nodes")
+    print(" POST /register")
+    print(" POST /compute")
     try:
-        httpd.serve_forever()
+      httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n[primary_node] KeyboardInterrupt received; shutting down gracefully...", flush=True)
-        httpd.shutdown()
+      print("\n[primary_node] KeyboardInterrupt received; shutting down gracefully...", flush=True)
+      httpd.shutdown()
     finally:
-        httpd.server_close()
-        print("[primary_node] server stopped.")
+      httpd.server_close()
+      print("[primary_node] server stopped.")
 
 
 if __name__ == "__main__":
