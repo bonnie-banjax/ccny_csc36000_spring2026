@@ -97,7 +97,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     mode = str(payload.get("mode", "count"))
     if mode not in ("count", "list"):
         raise ValueError("mode must be 'count' or 'list'")
-    
+
     sec_exec = str(payload.get("secondary_exec", "processes"))
     if sec_exec not in ("single", "threads", "processes"):
         raise ValueError("secondary_exec must be single|threads|processes")
@@ -112,7 +112,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     nodes = REGISTRY.active_nodes()
     if not nodes:
         raise ValueError("no active secondary nodes registered")
-    
+
     chunk = int(payload.get("chunk", 500_000))
 
     nodes_sorted = sorted(nodes, key=lambda n: n["node_id"])
@@ -144,27 +144,49 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         req = {k: v for k, v in req.items() if v is not None}
 
         t_call0 = time.perf_counter()
-        resp = _post_json(url, req, timeout_s=3600)
-        t_call1 = time.perf_counter()
+        try:
+            # Fault tolerance: if a node fails, don't crash the whole distributed job.
+            resp = _post_json(url, req, timeout_s=30)
+            t_call1 = time.perf_counter()
 
-        if not resp.get("ok"):
-            raise RuntimeError(f"node {node['node_id']} error: {resp}")
-        
-        node_elapsed_s = float(resp.get("elapsed_seconds", 0.0))
-        print(f"Node ID: {node["node_id"]} completed in: {node_elapsed_s}")
+            if not resp.get("ok"):
+                raise RuntimeError(f"node {node['node_id']} error: {resp}")
 
-        return {
-            "node_id": node["node_id"],
-            "node": {"host": host, "port": port, "cpu_count": node.get("cpu_count", 1)},
-            "slice": list(sl),
-            "round_trip_s": t_call1 - t_call0,
-            "node_elapsed_s": node_elapsed_s,
-            "node_sum_chunk_s": float(resp.get("sum_chunk_compute_seconds", 0.0)),
-            "total_primes": int(resp.get("total_primes", 0)),
-            "max_prime": int(resp.get("max_prime", -1)),
-            "primes": resp.get("primes", None),
-            "primes_truncated": bool(resp.get("primes_truncated", False)),
-        }
+            node_elapsed_s = float(resp.get("elapsed_seconds", 0.0))
+            print(f"Node ID: {node['node_id']} completed in: {node_elapsed_s}")
+
+            return {
+                "ok": True,
+                "node_id": node["node_id"],
+                "node": {"host": host, "port": port, "cpu_count": node.get("cpu_count", 1)},
+                "slice": list(sl),
+                "round_trip_s": t_call1 - t_call0,
+                "node_elapsed_s": node_elapsed_s,
+                "node_sum_chunk_s": float(resp.get("sum_chunk_compute_seconds", 0.0)),
+                "total_primes": int(resp.get("total_primes", 0)),
+                "max_prime": int(resp.get("max_prime", -1)),
+                "primes": resp.get("primes", None),
+                "primes_truncated": bool(resp.get("primes_truncated", False)),
+            }
+
+        except Exception as e:
+            t_call1 = time.perf_counter()
+            print(f"[WARNING] Node {node['node_id']} failed: {e}")
+
+            return {
+                "ok": False,
+                "node_id": node["node_id"],
+                "node": {"host": host, "port": port, "cpu_count": node.get("cpu_count", 1)},
+                "slice": list(sl),
+                "round_trip_s": t_call1 - t_call0,
+                "node_elapsed_s": 0.0,
+                "node_sum_chunk_s": 0.0,
+                "total_primes": 0,
+                "max_prime": -1,
+                "primes": [] if mode == "list" else None,
+                "primes_truncated": False,
+                "error": str(e),
+            }
 
     with ThreadPoolExecutor(max_workers=min(32, len(nodes_sorted))) as ex:
         futs = [ex.submit(call_node, node, sl) for node, sl in zip(nodes_sorted, slices)]
@@ -174,6 +196,10 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     per_node_results.sort(key=lambda r: r["slice"][0])
 
     for r in per_node_results:
+        # Optional but cleaner: skip failed nodes in aggregation
+        if not r.get("ok"):
+            continue
+
         total_primes += int(r["total_primes"])
         max_prime = max(max_prime, int(r["max_prime"]))
         if mode == "list" and r.get("primes") is not None:
@@ -201,7 +227,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
         "total_primes": total_primes,
         "max_prime": max_prime,
         "elapsed_seconds": t1 - t0,
-        "sum_node_compute_seconds": sum(float(r["node_elapsed_s"]) for r in per_node_results),
+        "sum_node_compute_seconds": sum(float(r["node_elapsed_s"]) for r in per_node_results if r.get("ok")),
         "sum_node_round_trip_seconds": sum(float(r["round_trip_s"]) for r in per_node_results),
     }
 
