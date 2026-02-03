@@ -120,7 +120,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     nodes = REGISTRY.active_nodes()
 
 ################################################################################
-##                                                                            ##
+#NOTE this is a secondary optimization but it needs the other one to work      #
     alive_nodes = []
 
     with ThreadPoolExecutor(max_workers=len(nodes)) as probe_ex:
@@ -140,7 +140,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
       raise ValueError("All registered nodes failed liveness probe.")
 
     nodes = alive_nodes
-##                                                                            ##
+#NOTE: otherwise one node crashing 1ms after the headsup still crashes it all  #
 ################################################################################
 
     chunk = int(payload.get("chunk", 500_000))
@@ -197,7 +197,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
       }
 
 ################################################################################
-##                                                                            ##
+#NOTE: this is the more important change, we need to know WHICH slice failed   #
     failed_slices = []
     partial_failure = False
 
@@ -216,7 +216,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
             "slice": list(sl),
             "error": str(e)
           })
-##                                                                            ##
+#NOTE: it also captures why, which is nice, but not critical                   #
 ################################################################################
 
     per_node_results.sort(key=lambda r: r["slice"][0])
@@ -239,7 +239,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     t1 = time.perf_counter()
 
 ################################################################################
-##                                                                            ##
+#NOTE: add some fields for "this can partially fail now so tell the user"      #
     resp: Dict[str, Any] = {
       "ok": True,
       "partial_failure": partial_failure,
@@ -258,7 +258,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
       "sum_node_compute_seconds": sum(float(r["node_elapsed_s"]) for r in per_node_results),
       "sum_node_round_trip_seconds": sum(float(r["round_trip_s"]) for r in per_node_results),
     }
-##                                                                            ##
+#NOTE: the two fields ad the bottom might not be correctly done                #
 ################################################################################
 
     if mode == "list":

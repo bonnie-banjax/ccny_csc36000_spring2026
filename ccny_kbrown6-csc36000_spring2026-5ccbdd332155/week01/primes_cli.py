@@ -99,7 +99,7 @@ def main(argv: list[str]) -> int:
         t1 = time.perf_counter()
 
 ################################################################################
-#NOTE this is almost entirely unchecked, but its "just" reporting             ##
+#NOTE this is almost entirely unchecked (generated), but it's "just" reporting #
         if not resp.get("ok"):
             print(f"Distributed error: {resp}", file=sys.stderr)
             return 1
@@ -123,7 +123,7 @@ def main(argv: list[str]) -> int:
             print(" ".join(map(str, shown)))
             if resp.get("primes_truncated") or total > len(primes):
                 print(f"... (returned primes are capped at {resp.get('max_return_primes', args.max_return_primes)})")
-##                                                                            ##
+#NOTE: ie, improves correctness rather than robustness, per se... TODO         #
 ################################################################################
 
         if args.time:
