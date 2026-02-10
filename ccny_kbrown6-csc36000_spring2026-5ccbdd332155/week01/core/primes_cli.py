@@ -4,7 +4,7 @@ primes_cli.py
 
 Notes
 -----
-- Examples of how to run from terminal: 
+- Examples of how to run from terminal:
 python3 week01/primes_cli.py --low 0 --high 100_000_0000 --exec single --time --mode count
 python3 week01/primes_cli.py --low 0 --high 100_000_0000 --exec threads --time --mode count
 python3 week01/primes_cli.py --low 0 --high 100_000_0000 --exec processes --time --mode count
@@ -98,12 +98,22 @@ def main(argv: list[str]) -> int:
         resp = _post_json(url, payload, timeout_s=3600)
         t1 = time.perf_counter()
 
+################################################################################
+#NOTE this is almost entirely unchecked (generated), but it's "just" reporting #
         if not resp.get("ok"):
             print(f"Distributed error: {resp}", file=sys.stderr)
             return 1
 
+        if resp.get("partial_failure"):
+            print("\n[!] WARNING: Partial result received. Some nodes failed.", file=sys.stderr)
+            if "failed_slices" in resp:
+                for fail in resp["failed_slices"]:
+                    print(f"    - Node {fail['node_id']} failed range {fail['slice']}: {fail['error']}", file=sys.stderr)
+            print("-" * 40, file=sys.stderr)
+
         if args.mode == "count":
-            print(int(resp.get("total_primes", 0)))
+            suffix = " (PARTIAL)" if resp.get("partial_failure") else ""
+            print(f"{int(resp.get('total_primes', 0))}{suffix}")
         else:
             primes = list(resp.get("primes", []))
             total = int(resp.get("total_primes", len(primes)))
@@ -113,6 +123,8 @@ def main(argv: list[str]) -> int:
             print(" ".join(map(str, shown)))
             if resp.get("primes_truncated") or total > len(primes):
                 print(f"... (returned primes are capped at {resp.get('max_return_primes', args.max_return_primes)})")
+#NOTE: ie, improves correctness rather than robustness, per se... TODO         #
+################################################################################
 
         if args.time:
             print(
@@ -120,7 +132,7 @@ def main(argv: list[str]) -> int:
                 f"(exec=distributed, nodes_used={resp.get('nodes_used')}, secondary_exec={resp.get('secondary_exec')}, chunk={args.chunk})",
                 file=sys.stderr,
             )
-            if args.include_per_node and "per_node" in resp:
+            if args.include_per_node and "per_node" in resp:               #TODO
                 print("Per-node summary:", file=sys.stderr)
                 for r in resp["per_node"]:
                     print(
