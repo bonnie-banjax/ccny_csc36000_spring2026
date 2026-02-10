@@ -87,14 +87,19 @@ def split_into_slices(low: int, high: int, n: int) -> List[Tuple[int, int]]:
       start = end
     return out
 
-def _check_node_health(node: Dict[str, Any], timeout_sL float = 2.0) -> bool:
+################################################################################
+#NOTE: just a helper function for getting the pings rolling                    #
+def _check_node_health(node: Dict[str, Any], timeout_s: float = 2.0) -> bool:
     """ Returns True if node /health responds with 200 OK within timeout. """
     url = f"http://{node['host']}:{node['port']}/health"
     try:
       with urllib.request.urlopen(url, timeout=timeout_s) as resp:
         return resp.getcode() == 200
-    except Exception:
+    except Exception as e:
+      print(f"[DEBUG] Health check failed for {url}: {e}")
       return False
+#NOTE: there was a typo here, or rather, missing syntax-- fixed now            #
+################################################################################
 
 def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     low = int(payload["low"])
@@ -202,7 +207,7 @@ def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     partial_failure = False
 
     with ThreadPoolExecutor(max_workers=min(32, len(nodes_sorted))) as ex:
-    futs = {ex.submit(call_node, node, sl): (node, sl) for node, sl in zip(nodes_sorted, slices)}
+      futs = {ex.submit(call_node, node, sl): (node, sl) for node, sl in zip(nodes_sorted, slices)}
       for f in as_completed(futs):
         node, sl = futs[f]
         try:
