@@ -53,6 +53,19 @@ message HealthCheckResponse {
   string status = 1;
 }
 
+// Node information for ListNodes
+message NodeInfo {
+  string node_id = 1;
+  string host = 2;
+  int32 port = 3;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+  repeated NodeInfo nodes = 1;
+}
+
 // Service definitions
 service WorkerService {
   rpc ComputeRange(ComputeRequest) returns (ComputeResponse);
@@ -61,4 +74,6 @@ service WorkerService {
 
 service CoordinatorService {
   rpc RegisterNode(RegisterRequest) returns (RegisterResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc Compute(ComputeRequest) returns (ComputeResponse);
 }

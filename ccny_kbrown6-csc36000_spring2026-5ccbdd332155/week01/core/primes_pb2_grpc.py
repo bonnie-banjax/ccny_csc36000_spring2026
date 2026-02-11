@@ -157,12 +157,34 @@ class CoordinatorServiceStub(object):
                 request_serializer=primes__pb2.RegisterRequest.SerializeToString,
                 response_deserializer=primes__pb2.RegisterResponse.FromString,
                 _registered_method=True)
+        self.ListNodes = channel.unary_unary(
+                '/primes.CoordinatorService/ListNodes',
+                request_serializer=primes__pb2.ListNodesRequest.SerializeToString,
+                response_deserializer=primes__pb2.ListNodesResponse.FromString,
+                _registered_method=True)
+        self.Compute = channel.unary_unary(
+                '/primes.CoordinatorService/Compute',
+                request_serializer=primes__pb2.ComputeRequest.SerializeToString,
+                response_deserializer=primes__pb2.ComputeResponse.FromString,
+                _registered_method=True)
 
 
 class CoordinatorServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def RegisterNode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListNodes(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Compute(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -175,6 +197,16 @@ def add_CoordinatorServiceServicer_to_server(servicer, server):
                     servicer.RegisterNode,
                     request_deserializer=primes__pb2.RegisterRequest.FromString,
                     response_serializer=primes__pb2.RegisterResponse.SerializeToString,
+            ),
+            'ListNodes': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListNodes,
+                    request_deserializer=primes__pb2.ListNodesRequest.FromString,
+                    response_serializer=primes__pb2.ListNodesResponse.SerializeToString,
+            ),
+            'Compute': grpc.unary_unary_rpc_method_handler(
+                    servicer.Compute,
+                    request_deserializer=primes__pb2.ComputeRequest.FromString,
+                    response_serializer=primes__pb2.ComputeResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -204,6 +236,60 @@ class CoordinatorService(object):
             '/primes.CoordinatorService/RegisterNode',
             primes__pb2.RegisterRequest.SerializeToString,
             primes__pb2.RegisterResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListNodes(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/primes.CoordinatorService/ListNodes',
+            primes__pb2.ListNodesRequest.SerializeToString,
+            primes__pb2.ListNodesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Compute(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/primes.CoordinatorService/Compute',
+            primes__pb2.ComputeRequest.SerializeToString,
+            primes__pb2.ComputeResponse.FromString,
             options,
             channel_credentials,
             insecure,

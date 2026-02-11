@@ -24,17 +24,17 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cprimes.proto\x12\x06primes\"\xd0\x01\n\x0e\x43omputeRequest\x12\x0b\n\x03low\x18\x01 \x01(\x03\x12\x0c\n\x04high\x18\x02 \x01(\x03\x12\x1a\n\x04mode\x18\x03 \x01(\x0e\x32\x0c.primes.Mode\x12\r\n\x05\x63hunk\x18\x04 \x01(\x05\x12(\n\x0esecondary_exec\x18\x05 \x01(\x0e\x32\x10.primes.ExecMode\x12\x19\n\x11secondary_workers\x18\x06 \x01(\x05\x12\x19\n\x11max_return_primes\x18\x07 \x01(\x05\x12\x18\n\x10include_per_node\x18\x08 \x01(\x08\"}\n\x0f\x43omputeResponse\x12\x14\n\x0ctotal_primes\x18\x01 \x01(\x03\x12\x11\n\tmax_prime\x18\x02 \x01(\x03\x12\x17\n\x0f\x65lapsed_seconds\x18\x03 \x01(\x01\x12\x0e\n\x06primes\x18\x04 \x03(\x03\x12\x18\n\x10primes_truncated\x18\x05 \x01(\x08\">\n\x0fRegisterRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0c\n\x04host\x18\x02 \x01(\t\x12\x0c\n\x04port\x18\x03 \x01(\x05\"#\n\x10RegisterResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\"\x14\n\x12HealthCheckRequest\"%\n\x13HealthCheckResponse\x12\x0e\n\x06status\x18\x01 \x01(\t*\x1b\n\x04Mode\x12\t\n\x05\x43OUNT\x10\x00\x12\x08\n\x04LIST\x10\x01*2\n\x08\x45xecMode\x12\n\n\x06SINGLE\x10\x00\x12\x0b\n\x07THREADS\x10\x01\x12\r\n\tPROCESSES\x10\x02\x32\x93\x01\n\rWorkerService\x12?\n\x0c\x43omputeRange\x12\x16.primes.ComputeRequest\x1a\x17.primes.ComputeResponse\x12\x41\n\x06Health\x12\x1a.primes.HealthCheckRequest\x1a\x1b.primes.HealthCheckResponse2W\n\x12\x43oordinatorService\x12\x41\n\x0cRegisterNode\x12\x17.primes.RegisterRequest\x1a\x18.primes.RegisterResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cprimes.proto\x12\x06primes\"\xd0\x01\n\x0e\x43omputeRequest\x12\x0b\n\x03low\x18\x01 \x01(\x03\x12\x0c\n\x04high\x18\x02 \x01(\x03\x12\x1a\n\x04mode\x18\x03 \x01(\x0e\x32\x0c.primes.Mode\x12\r\n\x05\x63hunk\x18\x04 \x01(\x05\x12(\n\x0esecondary_exec\x18\x05 \x01(\x0e\x32\x10.primes.ExecMode\x12\x19\n\x11secondary_workers\x18\x06 \x01(\x05\x12\x19\n\x11max_return_primes\x18\x07 \x01(\x05\x12\x18\n\x10include_per_node\x18\x08 \x01(\x08\"}\n\x0f\x43omputeResponse\x12\x14\n\x0ctotal_primes\x18\x01 \x01(\x03\x12\x11\n\tmax_prime\x18\x02 \x01(\x03\x12\x17\n\x0f\x65lapsed_seconds\x18\x03 \x01(\x01\x12\x0e\n\x06primes\x18\x04 \x03(\x03\x12\x18\n\x10primes_truncated\x18\x05 \x01(\x08\">\n\x0fRegisterRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0c\n\x04host\x18\x02 \x01(\t\x12\x0c\n\x04port\x18\x03 \x01(\x05\"#\n\x10RegisterResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\"\x14\n\x12HealthCheckRequest\"%\n\x13HealthCheckResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\"7\n\x08NodeInfo\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0c\n\x04host\x18\x02 \x01(\t\x12\x0c\n\x04port\x18\x03 \x01(\x05\"\x12\n\x10ListNodesRequest\"4\n\x11ListNodesResponse\x12\x1f\n\x05nodes\x18\x01 \x03(\x0b\x32\x10.primes.NodeInfo*\x1b\n\x04Mode\x12\t\n\x05\x43OUNT\x10\x00\x12\x08\n\x04LIST\x10\x01*2\n\x08\x45xecMode\x12\n\n\x06SINGLE\x10\x00\x12\x0b\n\x07THREADS\x10\x01\x12\r\n\tPROCESSES\x10\x02\x32\x93\x01\n\rWorkerService\x12?\n\x0c\x43omputeRange\x12\x16.primes.ComputeRequest\x1a\x17.primes.ComputeResponse\x12\x41\n\x06Health\x12\x1a.primes.HealthCheckRequest\x1a\x1b.primes.HealthCheckResponse2\xd5\x01\n\x12\x43oordinatorService\x12\x41\n\x0cRegisterNode\x12\x17.primes.RegisterRequest\x1a\x18.primes.RegisterResponse\x12@\n\tListNodes\x12\x18.primes.ListNodesRequest\x1a\x19.primes.ListNodesResponse\x12:\n\x07\x43ompute\x12\x16.primes.ComputeRequest\x1a\x17.primes.ComputeResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'primes_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_MODE']._serialized_start=524
-  _globals['_MODE']._serialized_end=551
-  _globals['_EXECMODE']._serialized_start=553
-  _globals['_EXECMODE']._serialized_end=603
+  _globals['_MODE']._serialized_start=655
+  _globals['_MODE']._serialized_end=682
+  _globals['_EXECMODE']._serialized_start=684
+  _globals['_EXECMODE']._serialized_end=734
   _globals['_COMPUTEREQUEST']._serialized_start=25
   _globals['_COMPUTEREQUEST']._serialized_end=233
   _globals['_COMPUTERESPONSE']._serialized_start=235
@@ -47,8 +47,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_HEALTHCHECKREQUEST']._serialized_end=483
   _globals['_HEALTHCHECKRESPONSE']._serialized_start=485
   _globals['_HEALTHCHECKRESPONSE']._serialized_end=522
-  _globals['_WORKERSERVICE']._serialized_start=606
-  _globals['_WORKERSERVICE']._serialized_end=753
-  _globals['_COORDINATORSERVICE']._serialized_start=755
-  _globals['_COORDINATORSERVICE']._serialized_end=842
+  _globals['_NODEINFO']._serialized_start=524
+  _globals['_NODEINFO']._serialized_end=579
+  _globals['_LISTNODESREQUEST']._serialized_start=581
+  _globals['_LISTNODESREQUEST']._serialized_end=599
+  _globals['_LISTNODESRESPONSE']._serialized_start=601
+  _globals['_LISTNODESRESPONSE']._serialized_end=653
+  _globals['_WORKERSERVICE']._serialized_start=737
+  _globals['_WORKERSERVICE']._serialized_end=884
+  _globals['_COORDINATORSERVICE']._serialized_start=887
+  _globals['_COORDINATORSERVICE']._serialized_end=1100
 # @@protoc_insertion_point(module_scope)

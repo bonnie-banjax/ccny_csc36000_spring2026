@@ -27,6 +27,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
+import grpc
+from concurrent import futures as grpc_futures
+import primes_pb2
+import primes_pb2_grpc
+
 
 class Registry:
     def __init__(self, ttl_s: int = 3600):
@@ -335,30 +340,198 @@ class Handler(BaseHTTPRequestHandler):
       return
 
 
+class CoordinatorServicer(primes_pb2_grpc.CoordinatorServicer):
+    """gRPC implementation of CoordinatorService.
+    
+    Implements:
+    - RegisterNode: register worker nodes
+    - ListNodes: list active nodes
+    - Compute: fan out computation to workers via gRPC with deadlines
+    """
+
+    def RegisterNode(self, request: primes_pb2.RegisterRequest, context) -> primes_pb2.RegisterResponse:
+        """Register a worker node in the coordinator's registry."""
+        try:
+            node = {
+                "node_id": request.node_id,
+                "host": request.host,
+                "port": request.port,
+            }
+            REGISTRY.upsert(node)
+            print(f"[primary_node gRPC] Registered node {request.node_id} at {request.host}:{request.port}")
+            return primes_pb2.RegisterResponse(success=True)
+        except Exception as e:
+            context.set_details(f"Registration failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            raise
+
+    def ListNodes(self, request, context) -> primes_pb2.ListNodesResponse:
+        """List all active nodes."""
+        try:
+            nodes = REGISTRY.active_nodes()
+            resp = primes_pb2.ListNodesResponse()
+            for node in nodes:
+                node_info = resp.nodes.add()
+                node_info.node_id = node["node_id"]
+                node_info.host = node["host"]
+                node_info.port = node["port"]
+            return resp
+        except Exception as e:
+            context.set_details(f"ListNodes failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            raise
+
+    def Compute(self, request: primes_pb2.ComputeRequest, context) -> primes_pb2.ComputeResponse:
+        """Coordinate prime computation across workers via gRPC fanout."""
+        try:
+            if request.high <= request.low:
+                context.set_details("high must be > low")
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                raise ValueError("high must be > low")
+
+            # Get active nodes
+            nodes = REGISTRY.active_nodes()
+            if not nodes:
+                context.set_details("No active worker nodes")
+                context.set_code(grpc.StatusCode.UNAVAILABLE)
+                raise ValueError("No active worker nodes")
+
+            # Split range across nodes
+            nodes_sorted = sorted(nodes, key=lambda n: n["node_id"])
+            slices = split_into_slices(request.low, request.high, len(nodes_sorted))
+            nodes_sorted = nodes_sorted[:len(slices)]
+
+            t0 = time.perf_counter()
+
+            # Fan out via gRPC with deadlines
+            total_primes = 0
+            max_prime = -1
+            primes_sample = []
+            partial_failure = False
+            per_node_results = []
+
+            def call_worker_grpc(node: Dict[str, Any], sl: Tuple[int, int]) -> Dict[str, Any]:
+                """Call worker via gRPC with deadline."""
+                try:
+                    target = f"{node['host']}:{node['port']}"
+                    channel = grpc.insecure_channel(target)
+                    stub = primes_pb2_grpc.WorkerStub(channel)
+
+                    # Create request
+                    worker_req = primes_pb2.ComputeRequest(
+                        low=sl[0],
+                        high=sl[1],
+                        mode=request.mode,
+                        chunk=request.chunk,
+                        secondary_exec=request.secondary_exec,
+                        secondary_workers=request.secondary_workers,
+                        max_return_primes=request.max_return_primes if request.mode == primes_pb2.Mode.LIST else 0,
+                    )
+
+                    t_call0 = time.perf_counter()
+                    # Add 3600 second deadline for worker RPC
+                    worker_resp = stub.ComputeRange(worker_req, timeout=3600)
+                    t_call1 = time.perf_counter()
+
+                    return {
+                        "node_id": node["node_id"],
+                        "slice": list(sl),
+                        "round_trip_s": t_call1 - t_call0,
+                        "total_primes": worker_resp.total_primes,
+                        "max_prime": worker_resp.max_prime,
+                        "primes": list(worker_resp.primes) if request.mode == primes_pb2.Mode.LIST else [],
+                        "primes_truncated": worker_resp.primes_truncated,
+                        "error": None,
+                    }
+                except Exception as e:
+                    return {
+                        "node_id": node["node_id"],
+                        "slice": list(sl),
+                        "error": str(e),
+                        "total_primes": 0,
+                        "max_prime": -1,
+                        "primes": [],
+                        "primes_truncated": False,
+                        "round_trip_s": 0.0,
+                    }
+
+            # Execute fanout
+            failed_slices = []
+            with ThreadPoolExecutor(max_workers=min(32, len(nodes_sorted))) as ex:
+                futs = {ex.submit(call_worker_grpc, node, sl): (node, sl) for node, sl in zip(nodes_sorted, slices)}
+                for f in as_completed(futs):
+                    result = f.result()
+                    if result.get("error"):
+                        partial_failure = True
+                        failed_slices.append({
+                            "node_id": result["node_id"],
+                            "slice": result["slice"],
+                            "error": result["error"],
+                        })
+                        print(f"[primary_node] Node {result['node_id']} failed: {result['error']}")
+                    else:
+                        per_node_results.append(result)
+                        total_primes += result["total_primes"]
+                        max_prime = max(max_prime, result["max_prime"])
+
+            per_node_results.sort(key=lambda r: r["slice"][0])
+
+            # Aggregate primes if LIST mode
+            if request.mode == primes_pb2.Mode.LIST:
+                for r in per_node_results:
+                    remaining = request.max_return_primes - len(primes_sample)
+                    if remaining > 0:
+                        primes_sample.extend(r["primes"][:remaining])
+
+            t1 = time.perf_counter()
+
+            # Build response
+            resp = primes_pb2.ComputeResponse(
+                total_primes=total_primes,
+                max_prime=max_prime,
+                elapsed_seconds=t1 - t0,
+                primes_truncated=len(primes_sample) >= request.max_return_primes,
+            )
+            resp.primes.extend(primes_sample)
+            
+            return resp
+
+        except Exception as e:
+            context.set_details(f"Compute failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            raise
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Primary coordinator for distributed prime computation.")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=9200)
+    ap.add_argument("--grpc-port", type=int, default=9201)
     ap.add_argument("--ttl", type=int, default=3600, help="Seconds to keep node registrations alive (default 3600).")
     args = ap.parse_args()
 
     global REGISTRY
     REGISTRY = Registry(ttl_s=max(10, int(args.ttl)))
 
+    # Start gRPC server
+    grpc_server = grpc.server(grpc_futures.ThreadPoolExecutor(max_workers=10))
+    primes_pb2_grpc.add_CoordinatorServicer_to_server(CoordinatorServicer(), grpc_server)
+    grpc_server.add_insecure_port(f"{args.host}:{args.grpc_port}")
+    grpc_server.start()
+    print(f"[primary_node] gRPC listening on {args.host}:{args.grpc_port}")
+
+    # Start HTTP server (backward compatibility)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"[primary_node] listening on http://{args.host}:{args.port}")
-    print(" GET /health")
-    print(" GET /nodes")
-    print(" POST /register")
-    print(" POST /compute")
+    print(f"[primary_node] HTTP listening on http://{args.host}:{args.port}")
     try:
       httpd.serve_forever()
     except KeyboardInterrupt:
-      print("\n[primary_node] KeyboardInterrupt received; shutting down gracefully...", flush=True)
+      print("\n[primary_node] Shutting down...", flush=True)
       httpd.shutdown()
+      grpc_server.stop(0)
     finally:
       httpd.server_close()
-      print("[primary_node] server stopped.")
+      print("[primary_node] stopped.")
 
 
 if __name__ == "__main__":

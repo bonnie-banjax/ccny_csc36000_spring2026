@@ -22,6 +22,14 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 from typing import List, Tuple
 from primes_in_range import get_primes
 
+try:
+    import grpc
+    import primes_pb2
+    import primes_pb2_grpc
+    GRPC_AVAILABLE = True
+except ImportError:
+    GRPC_AVAILABLE = False
+
 
 def iter_ranges(low: int, high: int, chunk: int) -> List[Tuple[int, int]]:
     """Split [low, high) into contiguous chunks."""
@@ -48,6 +56,59 @@ def _post_json(url: str, payload: dict, timeout_s: int = 3600) -> dict:
     req.add_header("Content-Type", "application/json")
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _grpc_compute(primary: str, args, return_list: bool) -> dict:
+    """Call Compute via gRPC. Falls back to HTTP if gRPC unavailable or errors."""
+    if not GRPC_AVAILABLE:
+        return {"ok": False, "error": "gRPC not available; using HTTP"}
+    
+    try:
+        # Parse primary address (strip http:// if present)
+        target = primary
+        if target.startswith("http://"):
+            target = target[7:]
+        if target.startswith("https://"):
+            target = target[8:]
+        target = target.rstrip("/")
+        if ":" not in target:
+            target = f"{target}:9201"  # Default gRPC port
+        
+        channel = grpc.insecure_channel(target)
+        stub = primes_pb2_grpc.CoordinatorStub(channel)
+        
+        mode_val = primes_pb2.Mode.LIST if return_list else primes_pb2.Mode.COUNT
+        exec_map = {"single": 0, "threads": 1, "processes": 2}
+        exec_val = exec_map.get(args.secondary_exec, 2)
+        
+        req = primes_pb2.ComputeRequest(
+            low=args.low,
+            high=args.high,
+            mode=mode_val,
+            chunk=args.chunk,
+            secondary_exec=exec_val,
+            secondary_workers=args.secondary_workers or 0,
+            max_return_primes=args.max_return_primes,
+            include_per_node=args.include_per_node,
+        )
+        
+        resp = stub.Compute(req, timeout=3600)
+        
+        # Convert protobuf response to dict format matching HTTP response
+        out = {
+            "ok": True,
+            "total_primes": resp.total_primes,
+            "max_prime": resp.max_prime,
+            "elapsed_seconds": resp.elapsed_seconds,
+            "primes_truncated": resp.primes_truncated,
+            "secondary_exec": args.secondary_exec,
+            "nodes_used": 0,  # TODO: get from coordinator
+        }
+        if return_list:
+            out["primes"] = list(resp.primes)
+        return out
+    except Exception as e:
+        return {"ok": False, "error": f"gRPC failed: {e}; will try HTTP"}
 
 
 def main(argv: list[str]) -> int:
@@ -84,18 +145,24 @@ def main(argv: list[str]) -> int:
             return 2
 
         t0 = time.perf_counter()
-        payload = {
-            "low": args.low,
-            "high": args.high,
-            "mode": "list" if return_list else "count",
-            "chunk": args.chunk,
-            "secondary_exec": args.secondary_exec,
-            "secondary_workers": args.secondary_workers,
-            "max_return_primes": args.max_return_primes,
-            "include_per_node": args.include_per_node,
-        }
-        url = args.primary.rstrip("/") + "/compute"
-        resp = _post_json(url, payload, timeout_s=3600)
+        
+        # Try gRPC first, fallback to HTTP
+        resp = _grpc_compute(args.primary, args, return_list)
+        if not resp.get("ok"):
+            # Fallback to HTTP
+            payload = {
+                "low": args.low,
+                "high": args.high,
+                "mode": "list" if return_list else "count",
+                "chunk": args.chunk,
+                "secondary_exec": args.secondary_exec,
+                "secondary_workers": args.secondary_workers,
+                "max_return_primes": args.max_return_primes,
+                "include_per_node": args.include_per_node,
+            }
+            url = args.primary.rstrip("/") + "/compute"
+            resp = _post_json(url, payload, timeout_s=3600)
+        
         t1 = time.perf_counter()
 
 ################################################################################
