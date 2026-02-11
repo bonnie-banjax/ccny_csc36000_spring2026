@@ -41,18 +41,17 @@ Notes
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import socket
-import threading
 import time
-import urllib.request
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import grpc
+from concurrent import futures 
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
-from primes_in_range import get_primes
 
+import primes_pb2
+import primes_pb2_grpc
+from primes_in_range import get_primes
 
 # ----------------------------
 # Partitioning helpers
@@ -117,13 +116,10 @@ def compute_partitioned(
     """
     Perform partitioned computation over [low, high) using get_primes per chunk.
     """
+    # Resilience: Invalid input handling
     if high <= low:
         raise ValueError("high must be > low")
-    if mode not in ("count", "list"):
-        raise ValueError("mode must be 'count' or 'list'")
-    if exec_mode not in ("single", "threads", "processes"):
-        raise ValueError("exec must be single|threads|processes")
-
+    
     if workers is None:
         workers = os.cpu_count() or 4
     workers = max(1, int(workers))
@@ -134,95 +130,104 @@ def compute_partitioned(
     t0 = time.perf_counter()
     chunk_results: List[Dict[str, Any]] = []
 
+    # Parallel and Single execution paths
     if exec_mode == "single":
         for a, b in ranges:
             chunk_results.append(_work_chunk((a, b, want_list)))
-
     elif exec_mode == "threads":
-        with ThreadPoolExecutor(max_workers=workers) as ex:
+        with futures.ThreadPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(_work_chunk, (a, b, want_list)) for a, b in ranges]
-            for f in as_completed(futs):
+            for f in futures.as_completed(futs):
                 chunk_results.append(f.result())
-
     else:  # processes
-        with ProcessPoolExecutor(max_workers=workers) as ex:
+        with futures.ProcessPoolExecutor(max_workers=workers) as ex:
             futs = [ex.submit(_work_chunk, (a, b, want_list)) for a, b in ranges]
-            for f in as_completed(futs):
+            for f in futures.as_completed(futs):
                 chunk_results.append(f.result())
 
     t1 = time.perf_counter()
 
     chunk_results.sort(key=lambda d: int(d["low"]))
     total_primes = sum(int(d["prime_count"]) for d in chunk_results)
-    sum_chunk = sum(float(d["elapsed_s"]) for d in chunk_results)
 
-    primes_out: List[int] | None = None
+    max_prime = max((int(d["max_prime"]) for d in chunk_results), default=-1)
+    primes_out = []
     truncated = False
-    max_prime = -1
-
+    
     if want_list:
-        primes_out = []
         for d in chunk_results:
             ps = d.get("primes") or []
-            if ps:
-                max_prime = max(max_prime, int(ps[-1]))
             if len(primes_out) < max_return_primes:
                 remaining = max_return_primes - len(primes_out)
                 primes_out.extend(ps[:remaining])
-                if len(ps) > remaining:
+                if len(ps) > remaining: 
                     truncated = True
-            else:
+            else: 
                 truncated = True
 
-    response: Dict[str, Any] = {
-        "ok": True,
-        "mode": mode,
-        "range": [low, high],
-        "chunk": chunk,
-        "exec": exec_mode,
-        "workers": workers if exec_mode != "single" else 1,
-        "chunks": len(ranges),
+    # Return data mapped for gRPC WorkerService
+    return {
         "total_primes": total_primes,
         "max_prime": max_prime,
         "elapsed_seconds": t1 - t0,
-        "sum_chunk_compute_seconds": sum_chunk,
+        "primes": primes_out,
+        "primes_truncated": truncated,
     }
 
-    if include_per_chunk:
-        slim = []
-        for d in chunk_results:
-            slim.append({
-                "low": d["low"],
-                "high": d["high"],
-                "elapsed_s": d["elapsed_s"],
-                "prime_count": d["prime_count"],
-                "max_prime": d.get("max_prime", -1),
-            })
-        response["per_chunk"] = slim
-
-    if primes_out is not None:
-        response["primes"] = primes_out
-        response["primes_truncated"] = truncated
-        response["max_return_primes"] = max_return_primes
-
-    return response
-
-
 # ----------------------------
-# Registration with primary
+# gRPC Worker Service 
 # ----------------------------
 
-def _guess_local_ip_for(primary_url: str) -> str:
-    """
-    Best-effort: pick the local IP used to reach the primary.
-    Works well in a LAN lab environment.
-    """
+class WorkerService(primes_pb2_grpc.WorkerServiceServicer):
+    """Implementing Task 2: WorkerService"""
+
+    def ComputeRange(self, request, context):
+        # Mapping Enums (Task 1) to Business Logic strings
+        mode_str = "count" if request.mode == primes_pb2.COUNT else "list"
+        exec_map = {
+            primes_pb2.SINGLE: "single",
+            primes_pb2.THREADS: "threads",
+            primes_pb2.PROCESSES: "processes"
+        }
+
+        try:
+            res = compute_partitioned(
+                low=request.low, high=request.high, mode=mode_str,
+                chunk=request.chunk, exec_mode=exec_map.get(request.secondary_exec, "single"),
+                workers=request.secondary_workers, max_return_primes=request.max_return_primes,
+                include_per_chunk=request.include_per_node
+            )
+            # Returning typed protobuf responses
+            return primes_pb2.ComputeResponse(
+                total_primes=res["total_primes"],
+                max_prime=res["max_prime"],
+                elapsed_seconds=res["elapsed_seconds"],
+                primes=res["primes"],
+                primes_truncated=res["primes_truncated"]
+            )
+        except ValueError as e:
+            # Resilience: Error mapping for invalid inputs
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(str(e))
+            return primes_pb2.ComputeResponse()
+        except Exception as e:
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Internal error: {str(e)}")
+            return primes_pb2.ComputeResponse()
+
+    def Health(self, request, context):
+        """Standard gRPC Health check"""
+        return primes_pb2.HealthCheckResponse(status="SERVING")
+
+# ----------------------------
+# Helper: IP Detection
+# ----------------------------
+
+def _guess_local_ip_for(primary_host: str) -> str:
+    """Detect local IP to advertise during gRPC registration"""
     try:
-        u = urlparse(primary_url)
-        host = u.hostname or "127.0.0.1"
-        port = u.port or (443 if u.scheme == "https" else 80)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect((host, port))
+        s.connect((primary_host, 50051)) # arbitrary port
         ip = s.getsockname()[0]
         s.close()
         return ip
@@ -230,188 +235,48 @@ def _guess_local_ip_for(primary_url: str) -> str:
         return "127.0.0.1"
 
 
-def _post_json(url: str, payload: Dict[str, Any], timeout_s: int = 5) -> Dict[str, Any]:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def start_registration_loop(
-    primary_url: str,
-    node_id: str,
-    host: str,
-    port: int,
-    *,
-    interval_s: int = 3600,
-) -> None:
-    """
-    Background heartbeat: periodically re-register so primary can expire stale nodes.
-    """
-    reg_url = primary_url.rstrip("/") + "/register"
-    payload = {
-        "node_id": node_id,
-        "host": host,
-        "port": port,
-        "cpu_count": os.cpu_count() or 1,
-        "ts": time.time(),
-    }
-
-    def loop():
-        while True:
-            payload["ts"] = time.time()
-            try:
-                _post_json(reg_url, payload, timeout_s=5)
-            except Exception as e:
-                # Ignore transient network failures; primary may be down temporarily.
-                print(f"error when registering node to primary: {e}")
-                pass
-            time.sleep(interval_s)
-
-    th = threading.Thread(target=loop, daemon=True)
-    th.start()
-
-
 # ----------------------------
-# HTTP server
+# Refactored Main Function
 # ----------------------------
-
-NODE_META: Dict[str, Any] = {}
-
-
-class Handler(BaseHTTPRequestHandler):
-    server_version = "SecondaryPrimeNode/2.0"
-
-    def _send_json(self, obj: Dict[str, Any], code: int = 200) -> None:
-        data = json.dumps(obj).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path == "/health":                                       #TODO
-            return self._send_json({"ok": True, "status": "healthy"})
-        if parsed.path == "/info":
-            return self._send_json({"ok": True, "node": NODE_META})
-        return self._send_json({"ok": False, "error": "not found"}, code=404)
-
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        if parsed.path != "/compute":
-            return self._send_json({"ok": False, "error": "not found"}, code=404)
-
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except Exception:
-            return self._send_json({"ok": False, "error": "invalid content-length"}, code=400)
-
-        if length <= 0:
-            return self._send_json({"ok": False, "error": "empty body"}, code=400)
-
-        if length > 10 * 1024 * 1024:
-            return self._send_json({"ok": False, "error": "request too large"}, code=413)
-
-        body = self.rfile.read(length)
-        try:
-            payload = json.loads(body.decode("utf-8"))
-        except Exception as e:
-            return self._send_json({"ok": False, "error": f"bad json: {e}"}, code=400)
-
-        try:
-            low = int(payload["low"])
-            high = int(payload["high"])
-        except Exception:
-            return self._send_json({"ok": False, "error": "payload must include integer low and high"}, code=400)
-
-        mode = str(payload.get("mode", "count"))
-        chunk = int(payload.get("chunk", 500_000))
-        exec_mode = str(payload.get("exec", "single"))
-        workers = payload.get("workers", None)
-        if workers is not None:
-            workers = int(workers)
-        max_return_primes = int(payload.get("max_return_primes", 5000))
-        include_per_chunk = bool(payload.get("include_per_chunk", False))
-
-        try:
-            resp = compute_partitioned(                                    #TODO
-                low, high,
-                mode=mode,
-                chunk=chunk,
-                exec_mode=exec_mode,
-                workers=workers,
-                max_return_primes=max_return_primes,
-                include_per_chunk=include_per_chunk,
-            )
-            resp["node_id"] = NODE_META.get("node_id")
-            return self._send_json(resp, code=200)
-        except Exception as e:
-            return self._send_json({"ok": False, "error": str(e)}, code=400)
-
-    def log_message(self, fmt, *args):
-        return
-
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Secondary prime worker node (HTTP server).")
-    ap.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1).")
-    ap.add_argument("--port", type=int, default=9100, help="Bind port (default 9100).")
-    ap.add_argument("--node-id", default=None, help="Optional stable node id (default: hostname).")
-
-    ap.add_argument("--primary", default=None, help="Primary coordinator URL, e.g. http://134.74.160.1:9200")
-    ap.add_argument("--public-host", default=None, help="Host/IP to advertise to primary (default: auto-detect).")
-    ap.add_argument("--register-interval", type=int, default=3600, help="Seconds between heartbeats (default 3600).")
-
+    ap = argparse.ArgumentParser(description="Secondary gRPC worker node.")
+    ap.add_argument("--host", default="[::]", help="Bind host.")
+    ap.add_argument("--port", type=int, default=50052, help="Bind port.")
+    ap.add_argument("--node-id", default=socket.gethostname(), help="Node ID.")
+    ap.add_argument("--coordinator", default="localhost:50051", help="Coordinator address.")
     args = ap.parse_args()
 
-    node_id = args.node_id or os.uname().nodename
+    # Step 1: Start the gRPC Server
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    primes_pb2_grpc.add_WorkerServiceServicer_to_server(WorkerService(), server)
+    server.add_insecure_port(f"{args.host}:{args.port}")
+    server.start()
+    
+    print(f"[worker] node_id={args.node_id} listening on {args.port}")
 
-    advertised_host = args.public_host
-    if args.primary and not advertised_host:
-        advertised_host = _guess_local_ip_for(args.primary)
-    if not advertised_host:
-        advertised_host = "127.0.0.1"
+    # Step 2: Startup Registration using gRPC
+    if args.coordinator:
+        try:
+            channel = grpc.insecure_channel(args.coordinator)
+            stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
+            
+            adv_host = _guess_local_ip_for(args.coordinator.split(':')[0])
+            reg_request = primes_pb2.RegisterRequest(
+                node_id=args.node_id,
+                host=adv_host,
+                port=args.port
+            )
+            # Synchronous registration call on startup
+            stub.RegisterNode(reg_request)
+            print(f"[worker] Registered to coordinator at {args.coordinator}")
+        except Exception as e:
+            print(f"[worker] Registration failed: {e}")
 
-    NODE_META.update({
-        "node_id": node_id,
-        "bind_host": args.host,
-        "bind_port": args.port,
-        "advertised_host": advertised_host,
-        "advertised_port": args.port,
-        "cpu_count": os.cpu_count() or 1,
-        "registered_to": args.primary,
-    })
-
-    if args.primary:
-        start_registration_loop(
-            args.primary,
-            node_id=node_id,
-            host=advertised_host,
-            port=args.port,
-            interval_s=max(5, int(args.register_interval)),
-        )
-
-    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"[secondary_node] node_id={node_id}")
-    print(f"[secondary_node] listening on http://{args.host}:{args.port}")
-    print(f"[secondary_node] advertised as http://{advertised_host}:{args.port}")
-    if args.primary:
-        print(f"[secondary_node] registering to primary: {args.primary}")
-    print("  GET  /health")
-    print("  GET  /info")
-    print("  POST /compute")
     try:
-        httpd.serve_forever()
+        server.wait_for_termination()
     except KeyboardInterrupt:
-        print("\n[secondary_node] KeyboardInterrupt received; shutting down gracefully...", flush=True)
-        httpd.shutdown()
-    finally:
-        httpd.server_close()
-        print("[secondary_node] server stopped.")
-
+        server.stop(0)
 
 if __name__ == "__main__":
     main()

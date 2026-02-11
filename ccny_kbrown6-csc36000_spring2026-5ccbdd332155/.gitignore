@@ -48,3 +48,8 @@ Thumbs.db
 *.mov
 *.wmv
 
+# Python virtual environment (Dependencies folder)
+venv/
+
+# Python cache files
+__pycache__/
