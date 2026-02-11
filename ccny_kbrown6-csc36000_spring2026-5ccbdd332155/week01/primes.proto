@@ -34,6 +34,16 @@ message ComputeResponse {
   double elapsed_seconds = 3;
   repeated int64 primes = 4;
   bool primes_truncated = 5;
+  int32 nodes_used = 6;
+  repeated PerNodeResult per_node = 7;
+}
+
+message PerNodeResult {
+  string node_id = 1;
+  repeated int32 slice = 2;
+  int64 total_primes = 3;
+  double node_elapsed_s = 4;
+  double round_trip_s = 5;
 }
 
 // Registration request for worker nodes

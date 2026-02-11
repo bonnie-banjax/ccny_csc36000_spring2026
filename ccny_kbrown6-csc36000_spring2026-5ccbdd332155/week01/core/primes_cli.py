@@ -102,10 +102,24 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
             "elapsed_seconds": resp.elapsed_seconds,
             "primes_truncated": resp.primes_truncated,
             "secondary_exec": args.secondary_exec,
-            "nodes_used": 0,  # TODO: get from coordinator
+            "nodes_used": resp.nodes_used,
         }
         if return_list:
             out["primes"] = list(resp.primes)
+        
+        # Add per_node if present
+        if resp.per_node:
+            per_node_list = []
+            for pn in resp.per_node:
+                per_node_list.append({
+                    "node_id": pn.node_id,
+                    "slice": list(pn.slice),
+                    "total_primes": pn.total_primes,
+                    "node_elapsed_s": pn.node_elapsed_s,
+                    "round_trip_s": pn.round_trip_s,
+                })
+            out["per_node"] = per_node_list
+        
         return out
     except Exception as e:
         return {"ok": False, "error": f"gRPC failed: {e}; will try HTTP"}

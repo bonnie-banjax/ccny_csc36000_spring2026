@@ -340,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
       return
 
 
-class CoordinatorServicer(primes_pb2_grpc.CoordinatorServicer):
+class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
     """gRPC implementation of CoordinatorService.
     
     Implements:
@@ -491,8 +491,19 @@ class CoordinatorServicer(primes_pb2_grpc.CoordinatorServicer):
                 max_prime=max_prime,
                 elapsed_seconds=t1 - t0,
                 primes_truncated=len(primes_sample) >= request.max_return_primes,
+                nodes_used=len(nodes_sorted),
             )
             resp.primes.extend(primes_sample)
+            
+            # Add per-node details if requested
+            if request.include_per_node:
+                for r in per_node_results:
+                    pn = resp.per_node.add()
+                    pn.node_id = r["node_id"]
+                    pn.slice.extend(r["slice"])
+                    pn.total_primes = r["total_primes"]
+                    pn.node_elapsed_s = r.get("node_elapsed_s", 0.0)
+                    pn.round_trip_s = r.get("round_trip_s", 0.0)
             
             return resp
 
