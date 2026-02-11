@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package primes;
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  COUNT = 1;
+  LIST = 2;
+}
+
+enum ExecMode {
+  EXEC_UNSPECIFIED = 0;
+  SINGLE = 1;
+  THREADS = 2;
+  PROCESSES = 3;
+}
+
+message Empty {}
+
+message HealthReply {
+  bool ok = 1;
+  string status = 2;
+}
+
+message NodeInfo {
+  string node_id = 1;
+  string host = 2;
+  int32 port = 3;
+  int32 cpu_count = 4;
+  int64 last_seen_unix = 5;
+}
+
+message RegisterNodeRequest {
+  NodeInfo node = 1;
+}
+
+message RegisterNodeReply {
+  bool ok = 1;
+  string error = 2;
+  NodeInfo node = 3;
+}
+
+message ListNodesReply {
+  bool ok = 1;
+  string error = 2;
+  repeated NodeInfo nodes = 3;
+  int32 ttl_s = 4;
+}
+
+message ChunkSummary {
+  int64 low = 1;
+  int64 high = 2;
+  double elapsed_s = 3;
+  int64 prime_count = 4;
+  int64 max_prime = 5;
+}
+
+message ComputeRangeRequest {
+  int64 low = 1;
+  int64 high = 2;
+  Mode mode = 3;
+  int32 chunk = 4;
+  ExecMode exec = 5;
+  int32 workers = 6;
+  int32 max_return_primes = 7;
+  bool include_per_chunk = 8;
+}
+
+message ComputeRangeReply {
+  bool ok = 1;
+  string error = 2;
+  int64 total_primes = 3;
+  int64 max_prime = 4;
+  double elapsed_seconds = 5;
+  double sum_chunk_compute_seconds = 6;
+  repeated int64 primes = 7;
+  bool primes_truncated = 8;
+  int32 max_return_primes = 9;
+  repeated ChunkSummary per_chunk = 10;
+}
+
+message ComputeRequest {
+  int64 low = 1;
+  int64 high = 2;
+  Mode mode = 3;
+  int32 chunk = 4;
+  ExecMode secondary_exec = 5;
+  int32 secondary_workers = 6;
+  int32 max_return_primes = 7;
+  bool include_per_node = 8;
+}
+
+message NodeResult {
+  string node_id = 1;
+  NodeInfo node = 2;
+  int64 slice_low = 3;
+  int64 slice_high = 4;
+  double round_trip_s = 5;
+  double node_elapsed_s = 6;
+  double node_sum_chunk_s = 7;
+  int64 total_primes = 8;
+  int64 max_prime = 9;
+}
+
+message ComputeReply {
+  bool ok = 1;
+  string error = 2;
+  Mode mode = 3;
+  int64 low = 4;
+  int64 high = 5;
+  int32 nodes_used = 6;
+  ExecMode secondary_exec = 7;
+  int32 secondary_workers = 8;
+  int32 chunk = 9;
+  int64 total_primes = 10;
+  int64 max_prime = 11;
+  double elapsed_seconds = 12;
+  double sum_node_compute_seconds = 13;
+  double sum_node_round_trip_seconds = 14;
+  repeated int64 primes = 15;
+  bool primes_truncated = 16;
+  int32 max_return_primes = 17;
+  repeated NodeResult per_node = 18;
+}
+
+service WorkerService {
+  rpc Health(Empty) returns (HealthReply);
+  rpc ComputeRange(ComputeRangeRequest) returns (ComputeRangeReply);
+}
+
+service CoordinatorService {
+  rpc Health(Empty) returns (HealthReply);
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeReply);
+  rpc ListNodes(Empty) returns (ListNodesReply);
+  rpc Compute(ComputeRequest) returns (ComputeReply);
+}
