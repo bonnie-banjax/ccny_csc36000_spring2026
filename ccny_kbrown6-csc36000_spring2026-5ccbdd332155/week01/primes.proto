@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package primes;
+
+// Enum for calculation mode
+enum Mode {
+  COUNT = 0;
+  LIST = 1;
+}
+
+// Enum for execution strategy
+enum ExecMode {
+  SINGLE = 0;
+  THREADS = 1;
+  PROCESSES = 2;
+}
+
+// Request for a prime range calculation
+message ComputeRequest {
+  int64 low = 1;
+  int64 high = 2;
+  Mode mode = 3;
+  int32 chunk = 4;
+  ExecMode secondary_exec = 5;
+  int32 secondary_workers = 6;
+  int32 max_return_primes = 7;
+  bool include_per_node = 8;
+}
+
+// Response containing calculation results
+message ComputeResponse {
+  int64 total_primes = 1;
+  int64 max_prime = 2;
+  double elapsed_seconds = 3;
+  repeated int64 primes = 4;
+  bool primes_truncated = 5;
+}
+
+// Registration request for worker nodes
+message RegisterRequest {
+  string node_id = 1;
+  string host = 2;
+  int32 port = 3;
+}
+
+message RegisterResponse {
+  bool success = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+}
+
+// Service definitions
+service WorkerService {
+  rpc ComputeRange(ComputeRequest) returns (ComputeResponse);
+  rpc Health(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+service CoordinatorService {
+  rpc RegisterNode(RegisterRequest) returns (RegisterResponse);
+}
