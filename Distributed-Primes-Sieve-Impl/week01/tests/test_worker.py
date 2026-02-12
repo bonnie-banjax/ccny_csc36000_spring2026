@@ -3,7 +3,7 @@ import primes_pb2
 import primes_pb2_grpc
 
 def run_test():
-    # Connect to the worker 
+    # Connect to the worker
     channel = grpc.insecure_channel('localhost:50052')
     stub = primes_pb2_grpc.WorkerServiceStub(channel)
 

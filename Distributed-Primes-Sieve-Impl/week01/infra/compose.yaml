@@ -1,0 +1,88 @@
+services:
+  dev-env:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: venvprimes_dev
+    volumes:
+      - .:/app:Z
+    working_dir: /app
+    environment:
+      - PIP_BREAK_SYSTEM_PACKAGES=1
+      - PYTHONDONTWRITEBYTECODE=1
+    ports:
+      - "8080:8080"
+    stdin_open: true # Equivalent to -i
+    tty: true        # Equivalent to -t
+    command: tail -f /dev/null
+
+services:
+  dev-env-1:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: venvprimes_dev
+    network_mode: "host"
+    deploy:
+      replicas: 3
+    volumes:
+      # - .:/app:Z
+      - ${PWD}:/app:Z
+    working_dir: /app
+    environment:
+      - PIP_BREAK_SYSTEM_PACKAGES=1
+      - PYTHONDONTWRITEBYTECODE=1
+    stdin_open: true # Equivalent to -i
+    tty: true        # Equivalent to -t
+    command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+
+
+services:
+  dev-env-2:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: venvprimes_dev
+    network_mode: "host"
+    deploy:
+      replicas: 3
+    volumes:
+      # - .:/app:Z
+      - ${PWD}:/app:Z
+    working_dir: /app
+    environment:
+      - PIP_BREAK_SYSTEM_PACKAGES=1
+      - PYTHONDONTWRITEBYTECODE=1
+    stdin_open: true # Equivalent to -i
+    tty: true        # Equivalent to -t
+    command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+
+services:
+  dev-env-3:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: venvprimes_dev
+    network_mode: "host"
+    deploy:
+      replicas: 3
+    volumes:
+      # - .:/app:Z
+      - ${PWD}:/app:Z
+    working_dir: /app
+    environment:
+      - PIP_BREAK_SYSTEM_PACKAGES=1
+      - PYTHONDONTWRITEBYTECODE=1
+    stdin_open: true # Equivalent to -i
+    tty: true        # Equivalent to -t
+    command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+
+# services:
+#   workers-1:
+#   image: localhost/infra_dev:latest
+#   network_mode: "host"
+#     deploy:
+#       replicas: 3
+#     stdin_open: true # Equivalent to -i
+#     tty: true        # Equivalent to -t
+#     command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]

@@ -62,7 +62,7 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
     """Call Compute via gRPC. Falls back to HTTP if gRPC unavailable or errors."""
     if not GRPC_AVAILABLE:
         return {"ok": False, "error": "gRPC not available; using HTTP"}
-    
+
     try:
         # Parse primary address (strip http:// if present)
         target = primary
@@ -73,14 +73,14 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
         target = target.rstrip("/")
         if ":" not in target:
             target = f"{target}:9201"  # Default gRPC port
-        
+
         channel = grpc.insecure_channel(target)
         stub = primes_pb2_grpc.CoordinatorStub(channel)
-        
+
         mode_val = primes_pb2.Mode.LIST if return_list else primes_pb2.Mode.COUNT
         exec_map = {"single": 0, "threads": 1, "processes": 2}
         exec_val = exec_map.get(args.secondary_exec, 2)
-        
+
         req = primes_pb2.ComputeRequest(
             low=args.low,
             high=args.high,
@@ -91,9 +91,9 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
             max_return_primes=args.max_return_primes,
             include_per_node=args.include_per_node,
         )
-        
+
         resp = stub.Compute(req, timeout=3600)
-        
+
         # Convert protobuf response to dict format matching HTTP response
         out = {
             "ok": True,
@@ -106,7 +106,7 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
         }
         if return_list:
             out["primes"] = list(resp.primes)
-        
+
         # Add per_node if present
         if resp.per_node:
             per_node_list = []
@@ -119,7 +119,7 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
                     "round_trip_s": pn.round_trip_s,
                 })
             out["per_node"] = per_node_list
-        
+
         return out
     except Exception as e:
         return {"ok": False, "error": f"gRPC failed: {e}; will try HTTP"}
@@ -159,7 +159,7 @@ def main(argv: list[str]) -> int:
             return 2
 
         t0 = time.perf_counter()
-        
+
         # Try gRPC first, fallback to HTTP
         resp = _grpc_compute(args.primary, args, return_list)
         if not resp.get("ok"):
@@ -176,7 +176,7 @@ def main(argv: list[str]) -> int:
             }
             url = args.primary.rstrip("/") + "/compute"
             resp = _post_json(url, payload, timeout_s=3600)
-        
+
         t1 = time.perf_counter()
 
 ################################################################################

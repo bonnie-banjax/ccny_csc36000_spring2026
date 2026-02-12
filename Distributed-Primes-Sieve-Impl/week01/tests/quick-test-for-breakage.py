@@ -46,7 +46,7 @@ def main():
         fake_payload = {
             "node_id": "Ghost-Node",
             "host": "127.0.0.1",
-            "port": 9999, # Port where nothing is listening
+            "port": 9998, # Port where nothing is listening
             "cpu_count": 1
         }
         req = urllib.request.Request(

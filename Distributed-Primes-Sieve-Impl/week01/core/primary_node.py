@@ -342,7 +342,7 @@ class Handler(BaseHTTPRequestHandler):
 
 class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
     """gRPC implementation of CoordinatorService.
-    
+
     Implements:
     - RegisterNode: register worker nodes
     - ListNodes: list active nodes
@@ -494,7 +494,7 @@ class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
                 nodes_used=len(nodes_sorted),
             )
             resp.primes.extend(primes_sample)
-            
+
             # Add per-node details if requested
             if request.include_per_node:
                 for r in per_node_results:
@@ -504,7 +504,7 @@ class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
                     pn.total_primes = r["total_primes"]
                     pn.node_elapsed_s = r.get("node_elapsed_s", 0.0)
                     pn.round_trip_s = r.get("round_trip_s", 0.0)
-            
+
             return resp
 
         except Exception as e:
@@ -526,7 +526,7 @@ def main() -> None:
 
     # Start gRPC server
     grpc_server = grpc.server(grpc_futures.ThreadPoolExecutor(max_workers=10))
-    primes_pb2_grpc.add_CoordinatorServicer_to_server(CoordinatorServicer(), grpc_server)
+    primes_pb2_grpc.add_CoordinatorServiceServicer_to_server(CoordinatorServicer(), grpc_server)
     grpc_server.add_insecure_port(f"{args.host}:{args.grpc_port}")
     grpc_server.start()
     print(f"[primary_node] gRPC listening on {args.host}:{args.grpc_port}")

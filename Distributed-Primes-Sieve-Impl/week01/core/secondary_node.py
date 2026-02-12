@@ -45,7 +45,7 @@ import os
 import socket
 import time
 import grpc
-from concurrent import futures 
+from concurrent import futures
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
@@ -119,7 +119,7 @@ def compute_partitioned(
     # Resilience: Invalid input handling
     if high <= low:
         raise ValueError("high must be > low")
-    
+
     if workers is None:
         workers = os.cpu_count() or 4
     workers = max(1, int(workers))
@@ -153,16 +153,16 @@ def compute_partitioned(
     max_prime = max((int(d["max_prime"]) for d in chunk_results), default=-1)
     primes_out = []
     truncated = False
-    
+
     if want_list:
         for d in chunk_results:
             ps = d.get("primes") or []
             if len(primes_out) < max_return_primes:
                 remaining = max_return_primes - len(primes_out)
                 primes_out.extend(ps[:remaining])
-                if len(ps) > remaining: 
+                if len(ps) > remaining:
                     truncated = True
-            else: 
+            else:
                 truncated = True
 
     # Return data mapped for gRPC WorkerService
@@ -175,7 +175,7 @@ def compute_partitioned(
     }
 
 # ----------------------------
-# gRPC Worker Service 
+# gRPC Worker Service
 # ----------------------------
 
 class WorkerService(primes_pb2_grpc.WorkerServiceServicer):
@@ -252,7 +252,7 @@ def main() -> None:
     primes_pb2_grpc.add_WorkerServiceServicer_to_server(WorkerService(), server)
     server.add_insecure_port(f"{args.host}:{args.port}")
     server.start()
-    
+
     print(f"[worker] node_id={args.node_id} listening on {args.port}")
 
     # Step 2: Startup Registration using gRPC
@@ -260,7 +260,7 @@ def main() -> None:
         try:
             channel = grpc.insecure_channel(args.coordinator)
             stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
-            
+
             adv_host = _guess_local_ip_for(args.coordinator.split(':')[0])
             reg_request = primes_pb2.RegisterRequest(
                 node_id=args.node_id,
