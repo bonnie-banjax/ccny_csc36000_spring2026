@@ -526,7 +526,7 @@ def main() -> None:
 
     # Start gRPC server
     grpc_server = grpc.server(grpc_futures.ThreadPoolExecutor(max_workers=10))
-    primes_pb2_grpc.add_CoordinatorServicer_to_server(CoordinatorServicer(), grpc_server)
+    primes_pb2_grpc.add_CoordinatorServiceServicer_to_server(CoordinatorServicer(), grpc_server)
     grpc_server.add_insecure_port(f"{args.host}:{args.grpc_port}")
     grpc_server.start()
     print(f"[primary_node] gRPC listening on {args.host}:{args.grpc_port}")

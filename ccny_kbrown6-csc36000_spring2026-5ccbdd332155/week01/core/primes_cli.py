@@ -75,7 +75,7 @@ def _grpc_compute(primary: str, args, return_list: bool) -> dict:
             target = f"{target}:9201"  # Default gRPC port
         
         channel = grpc.insecure_channel(target)
-        stub = primes_pb2_grpc.CoordinatorStub(channel)
+        stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
         
         mode_val = primes_pb2.Mode.LIST if return_list else primes_pb2.Mode.COUNT
         exec_map = {"single": 0, "threads": 1, "processes": 2}
