@@ -97,12 +97,23 @@ def split_into_slices(low: int, high: int, n: int) -> List[Tuple[int, int]]:
 def _check_node_health(node: Dict[str, Any], timeout_s: float = 2.0) -> bool:
     """ Returns True if node /health responds with 200 OK within timeout. """
     url = f"http://{node['host']}:{node['port']}/health"
+    # First try HTTP health endpoint (backward compatibility)
     try:
       with urllib.request.urlopen(url, timeout=timeout_s) as resp:
         return resp.getcode() == 200
-    except Exception as e:
-      print(f"[DEBUG] Health check failed for {url}: {e}")
-      return False
+    except Exception:
+      # Fall back to gRPC health check (for gRPC-only workers)
+      try:
+        target = f"{node['host']}:{node['port']}"
+        channel = grpc.insecure_channel(target)
+        stub = primes_pb2_grpc.WorkerServiceStub(channel)
+        req = primes_pb2.HealthCheckRequest()
+        hresp = stub.Health(req, timeout=timeout_s)
+        status = getattr(hresp, "status", "").upper()
+        return status in ("SERVING", "OK")
+      except Exception as e2:
+        print(f"[DEBUG] Health check failed for {url}: {e2}")
+        return False
 #NOTE: there was a typo here, or rather, missing syntax-- fixed now            #
 ################################################################################
 
@@ -415,7 +426,7 @@ class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
                 try:
                     target = f"{node['host']}:{node['port']}"
                     channel = grpc.insecure_channel(target)
-                    stub = primes_pb2_grpc.WorkerStub(channel)
+                    stub = primes_pb2_grpc.WorkerServiceStub(channel)
 
                     # Create request
                     worker_req = primes_pb2.ComputeRequest(
