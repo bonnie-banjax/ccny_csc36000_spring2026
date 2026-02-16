@@ -7,11 +7,23 @@ import os
 # Configuration
 LOG_FILE = "tests/system_test.log"
 PRIMARY_URL = "http://127.0.0.1:9200"
+GRPC_TARGET = "127.0.0.1:9200"
 PYTHON_BIN = "python3"  # Adjust to 'python' if on Windows
 
 PRIMARY_NODE = "core/primary_node.py"
-WORKER_NODE = "core/secondary_node.py"
+WORKER_NODE = "week01/core/secondary_node.py"
+WORKER_NODE_GRPC = "core/secondary_node.py"
 PRIMES_CLI = "core/primes_cli.py"
+
+POST_PRIMARY_SLEEP = 2
+POST_WORKERS_SLEEP = 3
+
+PRIMARY_PORT = "9200"
+SN_PORT_BASE = "910"
+SN_PORT_1 = "9101"
+SN_PORT_2 = "9102"
+SN_PORT_3 = "9103"
+COORDINATOR = "coordinator"
 
 def log_separator(msg):
     with open(LOG_FILE, "a") as f:
@@ -31,23 +43,23 @@ def main():
             [PYTHON_BIN, "-u", PRIMARY_NODE, "--port", "9200"],
             stdout=log_file_handle, stderr=log_file_handle
         )
-        time.sleep(2) # Allow boot time
+        time.sleep(POST_PRIMARY_SLEEP) # Allow boot time
 
         # 2. Start Secondaries
         print("Starting Secondary Nodes...")
         sec1 = subprocess.Popen(
-            [PYTHON_BIN, "-u", WORKER_NODE, "--port", "9101", "--primary", PRIMARY_URL, "--node-id", "Alpha"],
+            [PYTHON_BIN, "-u", WORKER_NODE, "--port", SN_PORT_1, f"--{COORDINATOR}", PRIMARY_URL, "--node-id", f"N{SN_PORT_BASE}{1}"],
             stdout=log_file_handle, stderr=log_file_handle
         )
         sec2 = subprocess.Popen(
-            [PYTHON_BIN, "-u", WORKER_NODE, "--port", "9102", "--primary", PRIMARY_URL, "--node-id", "Beta"],
+            [PYTHON_BIN, "-u", WORKER_NODE, "--port", SN_PORT_2, f"--{COORDINATOR}", PRIMARY_URL, "--node-id", f"N{SN_PORT_BASE}{2}"],
             stdout=log_file_handle, stderr=log_file_handle
         )
         sec3 = subprocess.Popen(
-            [PYTHON_BIN, "-u", WORKER_NODE, "--port", "9103", "--primary", PRIMARY_URL, "--node-id", "Beta"],
+            [PYTHON_BIN, "-u", WORKER_NODE, "--port", SN_PORT_3, f"--{COORDINATOR}", PRIMARY_URL, "--node-id", f"N{SN_PORT_BASE}{3}"],
             stdout=log_file_handle, stderr=log_file_handle
         )
-        time.sleep(3) # Allow registration time
+        time.sleep(POST_WORKERS_SLEEP) # Allow registration time
 
         # 3. Register a Fake Node
         print("Registering Fake Node (to test partial failure logic)...")
