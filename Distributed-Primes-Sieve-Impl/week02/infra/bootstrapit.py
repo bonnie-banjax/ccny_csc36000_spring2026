@@ -10,6 +10,7 @@ import inspect
 import argparse
 import subprocess
 from pathlib import Path
+from datetime import datetime
 
 ################################################################################
 
@@ -17,18 +18,18 @@ def get_project_root(): # BEGIN ###
     current = Path(__file__).resolve().parent
     for parent in [current] + list(current.parents):
         if (parent / ".git").is_dir():
-            return parent
+            return parent;
     print("Error: Can't find project root via  .git directory.")
     return current # Fallback
 # END ###
 
 # BEGIN ###
 def log_inventory(root, inventory, log_name="inventory.log"):
-    with open(root / log_name, "w") as f:
+    with open(root / f"{datetime.now().strftime("%Y-%m-%d%H-%M-%S")}{log_name}", "w") as f:
         f.write(f"PROJECT ROOT: {root}\n")
         f.write("-" * 40 + "\n")
 
-        leaf_idx = 0
+        leaf_idx = 0;
         for depth, level in enumerate(inventory):
             f.write(f"DEPTH {depth}:\n")
             for path in level:
@@ -95,6 +96,15 @@ def get_reflexive_inventory():
     return root, script_path, inventory
 # END ###
 
+def find_relative_path(filename: str, inventory_dict: dict, root: Path) -> str:
+    """Finds a file in the inventory and returns its path relative to root."""
+    for path in inventory_dict.values():
+        if path.name == filename:
+            # .relative_to(root) turns '/home/user/repo/tests/test.py' into 'tests/test.py'
+            return str(path.relative_to(root));
+    raise FileNotFoundError(f"Could not find {filename} in project inventory.");
+
+
 def get_engine(): # BEGIN ###
     for tool in ["podman", "docker"]:
         if shutil.which(tool):
@@ -104,7 +114,14 @@ def get_engine(): # BEGIN ###
 
 ################################################################################
 
-
+# BEGIN
+def find_dir_in_inventory(targ_dir, inventory):
+  for level in inventory:
+    for path in level:
+      if path.is_dir() and path.name == targ_dir:
+        return path
+    return None
+# END
 # BEGIN
 def find_infra_dir_in_inventory(inventory):
     """Scans the inventory levels to find the directory named 'infra'."""
@@ -116,12 +133,11 @@ def find_infra_dir_in_inventory(inventory):
 # END
 
 # BEGIN
-def link_infra_to_root(root, infra_dir):
+def link_to_root(root, infra_dir, fresh_dir):
     """
-    Creates a symbolic link at the project root pointing to the
-    actual infrastructure directory.
+    Creates a symbolic link at the project root pointing to the directory.
     """
-    link_path = root / "infra"
+    link_path = root / fresh_dir
 
     # Safety: Remove existing link or file if it exists to avoid FileExistsError
     if link_path.exists() or link_path.is_symlink():
@@ -223,7 +239,7 @@ def synthesize_infra_list(infra_dir: Path):
         y_file.write_text(compose_content)
 # END ###
 
-# BEGIN
+# BEGIN synthesize_infra
 def synthesize_infra(infra_dir: Path):
     """Ensures the environment definitions exist on disk."""
     infra_dir.mkdir(exist_ok=True)
@@ -302,6 +318,8 @@ WORKDIR /app
 
 # END
 
+
+
 ################################################################################
 # BEGIN
 def run_podman_logic(root, worker_count):
@@ -323,6 +341,38 @@ def run_podman_logic(root, worker_count):
 
 # END
 ################################################################################
+
+def run_all_tests(): # BEGIN ###
+
+  caller_file = inspect.getfile(inspect.currentframe())
+  script_path = Path(caller_file).resolve()
+
+  root, _, inventory = get_reflexive_inventory()
+  file_map = get_terminal_leaves(inventory)
+
+  log_inventory(root, inventory)
+
+  req_filename = "requirements.txt"
+  relative_req_path = find_relative_path(req_filename, file_map, root)
+
+  suite_filename = "integration-suite.py"
+  relative_suite_path = find_relative_path(suite_filename, file_map, root)
+
+  subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-r", relative_req_path],
+    check=True
+  )
+  result = subprocess.run(
+      [sys.executable, "-u", relative_suite_path],
+      check=True,      # Raise exception if script fails
+      text=True        # Handle output as strings instead of bytes
+  )
+
+
+
+# END ###
+################################################################################
+
 def bootstrap_with_source_capture():
     # 1. Identify the file containing this specific function
     # This works even if bootstrapit.py is imported or run as a script
@@ -358,37 +408,44 @@ def dig_snake_pit(worker_count: int): # BEGIN ###
 
     # BEGIN 2. Identify Project Root and Inventory
     root, _, inventory = get_reflexive_inventory()
-    infra_dir = find_infra_dir_in_inventory(inventory)
+    file_map = get_terminal_leaves(inventory)
+
+    infra_dir = find_dir_in_inventory("infra", inventory)
     print(f"\n\nInfra Dir Found: {infra_dir} \n\n")
-    # infra_dir = root / "infra"
-    # log_dir = root / "logs"
-    sym_infra = link_infra_to_root(root,infra_dir)
-    # 3. Log the Inventory for Verification
-    # This creates inventory.log in the root for you to audit.
+    sym_infra = link_to_root(root, infra_dir, "infra")
+
     log_inventory(root, inventory)
+
+    suite_filename = "integration-suite.py"
+    relative_suite_path = find_relative_path(suite_filename, file_map, root)
+
+    compose_filename = "compose.yaml"
+    relative_compose_path = find_relative_path(compose_filename, file_map, root)
+
+
+
     # END
 
-    # BEGIN Infra Files Back Synthesis
-    # 4. Synthesize Infrastructure if missing
-    # This ensures the Factory (the script) can recreate its Environment.
-    # synthesize_infra_list(infra_dir)
-    # synthesize_infra_relative(infra_dir, root)
-    # END
 
-    # 5. Set the Environment Variable for Compose
-    # We pass the absolute root found by the treewalker to the YAML.
     os.environ["PROJECT_ROOT"] = str(root)
+    os.environ["CONTAINER_FILE"] = str(root)
 
     print(f"--- Starting Hermetic Environment [Reflexive Mode] ---")
     print(f"Root: {root}")
+    # print(str(sym_infra / "compose.yaml"))
+    print(f"relative compose: {relative_compose_path}")
 
     # BEGIN pod spinning logic
     try:
-        # 6. Spin up the Pod
-        # We use the -p project name to ensure container IDs are deterministic.
+        # subprocess.run([
+        #     "podman-compose",
+        #     "-f", str(sym_infra / "compose.yaml"),
+        #     "-p", f"{SNAKE_PIT}",
+        #     "up", "-d", "--build"
+        # ], cwd=root, check=True)
         subprocess.run([
             "podman-compose",
-            "-f", str(sym_infra / "compose.yaml"),
+            "-f", relative_compose_path,
             "-p", f"{SNAKE_PIT}",
             "up", "-d", "--build"
         ], cwd=root, check=True)
@@ -399,26 +456,27 @@ def dig_snake_pit(worker_count: int): # BEGIN ###
 
         exec_cmd = [
             "podman", "exec", "-i", f"{SNAKE_PIT}",
-            "python3", "-", "--dry-run"  # The '-' tells Python to read from stdin
+            "python3", "-", "--run-all"  # The '-' tells Python to read from stdin
         ]
 
-        # 3. Execute and "Pipe" the string in
+        # BEGIN 3. Execute and "Pipe" the string in
         print("Teleporting bootstrapper source to container...")
         subprocess.run(
             exec_cmd,
             input=STRAPPED_BOOT,  # This 'feeds' the string to the container's python
             text=True,            # Ensures it treats input as a string, not bytes
             check=True
-        )
+        ) # END
 
-        # 7. Trigger Internal Setup
-        # Only happens inside the hermetic container; host stays clean.
-        print("Verifying Filesystem Transition...")
-        test_cmd = "import os; print(f'Container sees {len(os.listdir(\".\"))} items in /app')"
+        # BEGIN please work
         subprocess.run([
-          "podman", "exec", f"{SNAKE_PIT}",
-          "python3", "-c", test_cmd
+          "podman", "exec",
+          "-w", "/app",        # Ensure we are in the project root
+          f"{SNAKE_PIT}",
+          "python3", relative_suite_path
         ], check=True)
+        # END
+
     # END
     except subprocess.CalledProcessError as e:
         print(f"Bootstrap failed: {e}")
@@ -429,6 +487,8 @@ def dig_snake_pit(worker_count: int): # BEGIN ###
     print("Run nodes via: podman exec -it snake_pit python3 core/primary_node.py")
 
 # END ###
+
+
 ################################################################################
 
 if __name__ == "__main__": # BEGIN
@@ -443,6 +503,11 @@ if __name__ == "__main__": # BEGIN
         action="store_true",
         help="Build and log the project inventory without starting containers."
     )
+    parser.add_argument(
+        "--run-all",
+        action="store_true",
+        help="Run the integration test suite"
+    )
 
 
     args = parser.parse_args()
@@ -453,6 +518,8 @@ if __name__ == "__main__": # BEGIN
         log_inventory(root, inventory)
         print(f"Inventory synthesized and logged to {root}/inventory.log")
         print("No container actions performed.")
+    if args.run_all:
+      run_all_tests()
     else:
         # Full execution
         dig_snake_pit(args.workers)

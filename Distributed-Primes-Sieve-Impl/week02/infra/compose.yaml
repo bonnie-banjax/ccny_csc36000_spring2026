@@ -2,7 +2,7 @@ services:
   primary:
     build:
       context: ${PROJECT_ROOT}
-      dockerfile: infra/Containerfile
+      dockerfile: ${CONTAINER_FILE} # infra/Containerfile
     container_name: snake_pit
     volumes:
       - ${PROJECT_ROOT}:/app:Z
@@ -17,7 +17,7 @@ services:
   worker:
     build:
       context: ${PROJECT_ROOT}
-      dockerfile: infra/Containerfile
+      dockerfile: ${CONTAINER_FILE} # infra/Containerfile
     # No container_name here so we can scale
     volumes:
       - ${PROJECT_ROOT}:/app:Z

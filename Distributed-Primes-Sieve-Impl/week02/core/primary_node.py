@@ -94,6 +94,35 @@ def split_into_slices(low: int, high: int, n: int) -> List[Tuple[int, int]]:
 
 ################################################################################
 #NOTE: just a helper function for getting the pings rolling                    #
+def _check_node_health_http(node: Dict[str, Any], timeout_s: float = 2.0) -> bool:
+    """ Returns True if node /health responds with 200 OK within timeout. """
+    url = f"http://{node['host']}:{node['port']}/health"
+    try:
+      with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+        return resp.getcode() == 200
+    except Exception as e:
+      print(f"[DEBUG] Health check failed for {url}: {e}")
+      return False
+#NOTE: there was a typo here, or rather, missing syntax-- fixed now            #
+################################################################################
+
+
+################################################################################
+#NOTE: just a helper function for getting the pings rolling                    #
+def _check_node_health_grpc(node: Dict[str, Any], timeout_s: float = 2.0) -> bool:
+    """ Returns True if node /health responds with 200 OK within timeout. """
+    url = f"http://{node['host']}:{node['port']}/health"
+    try:
+      with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+        return resp.getcode() == 200
+    except Exception as e:
+      print(f"[DEBUG] Health check failed for {url}: {e}")
+      return False
+#NOTE: there was a typo here, or rather, missing syntax-- fixed now            #
+################################################################################
+
+################################################################################
+#NOTE: just a helper function for getting the pings rolling                    #
 def _check_node_health(node: Dict[str, Any], timeout_s: float = 2.0) -> bool:
     """ Returns True if node /health responds with 200 OK within timeout. """
     url = f"http://{node['host']}:{node['port']}/health"
@@ -105,6 +134,7 @@ def _check_node_health(node: Dict[str, Any], timeout_s: float = 2.0) -> bool:
       return False
 #NOTE: there was a typo here, or rather, missing syntax-- fixed now            #
 ################################################################################
+
 
 def distributed_compute(payload: Dict[str, Any]) -> Dict[str, Any]:
     low = int(payload["low"])
@@ -415,7 +445,7 @@ class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
                 try:
                     target = f"{node['host']}:{node['port']}"
                     channel = grpc.insecure_channel(target)
-                    stub = primes_pb2_grpc.WorkerStub(channel)
+                    stub = primes_pb2_grpc.WorkerServiceStub(channel)
 
                     # Create request
                     worker_req = primes_pb2.ComputeRequest(
@@ -516,7 +546,8 @@ class CoordinatorServicer(primes_pb2_grpc.CoordinatorServiceServicer):
 def main() -> None:
     ap = argparse.ArgumentParser(description="Primary coordinator for distributed prime computation.")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=9200)
+    # ap.add_argument("--port", type=int, default=50051) # incomplete execution
+    ap.add_argument("--http-port", type=int, default=9200)
     ap.add_argument("--grpc-port", type=int, default=9201)
     ap.add_argument("--ttl", type=int, default=3600, help="Seconds to keep node registrations alive (default 3600).")
     args = ap.parse_args()
@@ -532,8 +563,8 @@ def main() -> None:
     print(f"[primary_node] gRPC listening on {args.host}:{args.grpc_port}")
 
     # Start HTTP server (backward compatibility)
-    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"[primary_node] HTTP listening on http://{args.host}:{args.port}")
+    httpd = ThreadingHTTPServer((args.host, args.http_port), Handler)
+    print(f"[primary_node] HTTP listening on http://{args.host}:{args.http_port}")
     try:
       httpd.serve_forever()
     except KeyboardInterrupt:
