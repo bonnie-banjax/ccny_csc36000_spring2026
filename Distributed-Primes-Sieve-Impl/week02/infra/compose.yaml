@@ -1,9 +1,9 @@
 services:
   primary:
+    profiles: ["primary"]
     build:
       context: ${PROJECT_ROOT}
-      dockerfile: ${CONTAINER_FILE} # infra/Containerfile
-    container_name: snake_pit
+      dockerfile: ${CONTAINER_FILE}
     volumes:
       - ${PROJECT_ROOT}:/app:Z
     working_dir: /app
@@ -15,9 +15,10 @@ services:
     command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
 
   worker:
+    profiles: ["worker"]
     build:
       context: ${PROJECT_ROOT}
-      dockerfile: ${CONTAINER_FILE} # infra/Containerfile
+      dockerfile: ${CONTAINER_FILE}
     # No container_name here so we can scale
     volumes:
       - ${PROJECT_ROOT}:/app:Z
@@ -25,3 +26,23 @@ services:
     depends_on:
       - primary
     command: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+
+  isolated:
+    profiles: ["isolated"]
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: ${CONTAINER_FILE}
+    volumes:
+      - ${PROJECT_ROOT}:/app_host:ro  # Mount host as Read-Only
+      - /app                          # Create a fresh, isolated internal folder
+    working_dir: /app
+    environment:
+      - PROJECT_ROOT=${PROJECT_ROOT}
+    ports:
+      - "50050:50050" # Primary HTTP
+      - "50051:50051" # Primary gRPC
+    command: [
+      "/bin/sh",
+      "-c",
+      "cp -rp /app_host/. /app && while true; do sleep 3600; done"
+    ]

@@ -23,12 +23,12 @@ PRIMES_CLI = str(LOBBY_DIR/ "core" / "primes_cli.py") #defunct
 CLIENT_CLI = str(LOBBY_DIR/ "core" / "client_cli.py")
 
 
-if str(DIR_CORE) not in sys.path:
-    sys.path.insert(0, str(DIR_CORE))
-if str(DIR_INFRA) not in sys.path:
-    sys.path.insert(0, str(DIR_INFRA))
-if str(DIR_TESTS) not in sys.path:
-    sys.path.insert(0, str(DIR_TESTS))
+# if str(DIR_CORE) not in sys.path:
+#     sys.path.insert(0, str(DIR_CORE))
+# if str(DIR_INFRA) not in sys.path:
+#     sys.path.insert(0, str(DIR_INFRA))
+# if str(DIR_TESTS) not in sys.path:
+#     sys.path.insert(0, str(DIR_TESTS))
 
 # END awful hack
 
@@ -48,23 +48,16 @@ PYTHON_BIN = "python3"
 POST_PRIMARY_SLEEP = 2
 POST_WORKERS_SLEEP = 3
 
+# A list of test variations
+SCENARIOS = [
+    {"name": "Standard Count", "args": ["--low", "2", "--high", "1000000", "--mode", "count"]},
+    {"name": "Primes List",   "args": ["--low", "2", "--high", "1000", "--mode", "list"]},
+    {"name": "Small Chunks",  "args": ["--low", "2", "--high", "100000", "--chunk", "1000"]},
+]
 
-def dir_tracker():
-  with open(LOG_FILE, "a") as f:
-    f.write( # this will probably be removed soon
-      f"\nBASE_DIR: {BASE_DIR}\n"
-      f"\nLOBBY_DIR: {LOBBY_DIR}\n"
-      f"\nDIR_CORE: {DIR_CORE}\n"
-      f"\nDIR_INFRA: {DIR_INFRA}\n"
-      f"\nDIR_TESTS: {DIR_TESTS}\n"
-      f"\nLOG_FILE: {LOG_FILE}\n"
-      f"\nPRIMARY_NODE: {PRIMARY_NODE}\n"
-      f"\nWORKER_NODE_GRPC: {WORKER_NODE_GRPC}\n"
-      f"\nPRIMES_CLI: {PRIMES_CLI}\n"
-    )
 
 def create_unique_logfile_handle():
-  return  str(LOBBY_DIR / "tests" / f"run-{datetime.now().strftime("%Y-%m-%d%H-%M-%S")}.log")
+  return  str(LOBBY_DIR / "logs" / f"run-{datetime.now().strftime("%Y-%m-%d%H-%M-%S")}.log")
 
 # BEGIN Parametric Test Suite
 def log_separator(handle, label: str):
@@ -125,13 +118,7 @@ def run_cli_test(test_label, extra_args, log_handle):
     subprocess.run(full_cmd, stdout=log_handle, stderr=log_handle)
 
     log_separator(log_handle, f"CLI END: {test_label}")
-# A list of test variations
 
-SCENARIOS = [
-    {"name": "Standard Count", "args": ["--low", "2", "--high", "1000000", "--mode", "count"]},
-    {"name": "Primes List",   "args": ["--low", "2", "--high", "1000", "--mode", "list"]},
-    {"name": "Small Chunks",  "args": ["--low", "2", "--high", "100000", "--chunk", "1000"]},
-]
 
 def parametric_test_suite(num_workers=3, num_ghosts=1):
     log_file_handle = open(create_unique_logfile_handle(), "a") # Open in Append mode (was just LOGFILE)
@@ -150,7 +137,6 @@ def parametric_test_suite(num_workers=3, num_ghosts=1):
         time.sleep(POST_WORKERS_SLEEP)
 
         # CHUNK 3: Optional Ghost (Toggle this as needed)
-        # register_ghost(PRIMARY_GRPC)
         register_ghosts(num_ghosts, PRIMARY_GRPC)
 
         # CHUNK 4: Scenarios (Loop through your list)
