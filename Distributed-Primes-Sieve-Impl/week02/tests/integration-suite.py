@@ -23,13 +23,6 @@ PRIMES_CLI = str(LOBBY_DIR/ "core" / "primes_cli.py") #defunct
 CLIENT_CLI = str(LOBBY_DIR/ "core" / "client_cli.py")
 
 
-# if str(DIR_CORE) not in sys.path:
-#     sys.path.insert(0, str(DIR_CORE))
-# if str(DIR_INFRA) not in sys.path:
-#     sys.path.insert(0, str(DIR_INFRA))
-# if str(DIR_TESTS) not in sys.path:
-#     sys.path.insert(0, str(DIR_TESTS))
-
 # END awful hack
 
 
@@ -50,68 +43,83 @@ POST_WORKERS_SLEEP = 3
 
 # A list of test variations
 SCENARIOS = [
-    {"name": "Standard Count", "args": ["--low", "2", "--high", "1000000", "--mode", "count"]},
-    {"name": "Primes List",   "args": ["--low", "2", "--high", "1000", "--mode", "list"]},
-    {"name": "Small Chunks",  "args": ["--low", "2", "--high", "100000", "--chunk", "1000"]},
+  {"name": "Standard Count", "args": ["--low", "2", "--high", "1000000", "--mode", "count"]},
+  {"name": "Primes List",   "args": ["--low", "2", "--high", "1000", "--mode", "list"]},
+  {"name": "Small Chunks",  "args": ["--low", "2", "--high", "100000", "--chunk", "1000"]},
 ]
 
+# BEGIN port helper
+import socket
 
+def get_free_port() -> int:
+  """
+  Asks the OS for a free ephemeral port, then releases it.
+  Returns the port number.
+  """
+  # AF_INET = IPv4, SOCK_STREAM = TCP
+  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    # Bind to port 0 tells the OS to assign a random free port
+    s.bind(('', 0))
+    # Ensure the OS has actually allocated the resource
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    return s.getsockname()[1] # getsockname returns (address, port)
+# END
+
+# BEGIN log business
 def create_unique_logfile_handle():
   return  str(LOBBY_DIR / "logs" / f"run-{datetime.now().strftime("%Y-%m-%d%H-%M-%S")}.log")
 
-# BEGIN Parametric Test Suite
 def log_separator(handle, label: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     border = "=" * 20
     handle.write(f"\n\n{border} {label} [{timestamp}] {border}\n")
     handle.flush()
+# END
 
-def start_coordinator(log_handle):
+# BEGIN Parametric Test Suite
+
+def start_coordinator(primary_port, log_handle):
     print(f"Starting Coordinator...")
     return subprocess.Popen(
-        [PYTHON_BIN, "-u", PRIMARY_NODE, "--grpc-port", "50051"],
+        [PYTHON_BIN, "-u", PRIMARY_NODE, "--grpc-port", str(primary_port)],
         stdout=log_handle, stderr=log_handle
     )
 
-def start_workers(count, log_handle):
+def start_workers(count, log_handle, coordinator_address):
     workers = []
-    for i in range(1, count + 1):
-        port = 50060 + i
+    for i in range(count):
+        # Dynamically grab a port for this specific worker
+        port = get_free_port()
+
         p = subprocess.Popen(
-            [PYTHON_BIN, "-u", WORKER_NODE_GRPC, "--port", str(port),
-             "--coordinator", PRIMARY_GRPC, "--node-id", f"Worker-{port}"],
+            [PYTHON_BIN, "-u", WORKER_NODE_GRPC,
+             "--port", str(port),
+             "--coordinator", coordinator_address,
+             "--node-id", f"Worker-{port}"],
             stdout=log_handle, stderr=log_handle
         )
         workers.append(p)
     return workers
 
-def register_ghost(target_grpc):
-    channel = grpc.insecure_channel(target_grpc)
-    stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
-    ghost_request = primes_pb2.RegisterRequest(
-        node_id="Ghost-Node", host="127.0.0.1", port=9998
-    )
-    stub.RegisterNode(ghost_request)
-
 def register_ghosts(count, target_grpc):
     channel = grpc.insecure_channel(target_grpc)
     stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
 
-    for i in range(1, count + 1):
-      port = 9900 + i
+    for i in range(count):
+      dead_port = get_free_port()  # Guaranteed available, but we won't listen on it
       ghost_request = primes_pb2.RegisterRequest(
-        node_id=f"Ghost-Node-{i}", host="127.0.0.1", port=port
+        node_id=f"Ghost-Node-{i}", host="127.0.0.1", port=dead_port
       )
       stub.RegisterNode(ghost_request)
 
-def run_cli_test(test_label, extra_args, log_handle):
+def run_cli_test(test_label, extra_args, log_handle, prim_grpc):
     """
     test_label: "List Test", "Count Test", etc.
     extra_args: list of flags like ["--mode", "list", "--high", "5000"]
     """
     log_separator(log_handle, f"CLI START: {test_label}")
 
-    base_cmd = [PYTHON_BIN, CLIENT_CLI, "--exec", "distributed", "--primary", PRIMARY_GRPC]
+    base_cmd = [PYTHON_BIN, CLIENT_CLI, "--exec", "distributed", "--primary", prim_grpc]
     full_cmd = base_cmd + extra_args
 
     print(f"Running scenario: {test_label}...")
@@ -119,136 +127,125 @@ def run_cli_test(test_label, extra_args, log_handle):
 
     log_separator(log_handle, f"CLI END: {test_label}")
 
-
-def parametric_test_suite(num_workers=3, num_ghosts=1):
-    log_file_handle = open(create_unique_logfile_handle(), "a") # Open in Append mode (was just LOGFILE)
+def parametric_test_suite(log_file_handle, num_workers=3, num_ghosts=1):
+    # log_file_handle = open(create_unique_logfile_handle(), "a") # Open in Append mode (was just LOGFILE)
     log_separator(log_file_handle, "NEW TEST SESSION STARTED")
 
     primary = None
     workers = []
 
+    primary_port = get_free_port()
+    dynamic_primary_addr = f"127.0.0.1:{primary_port}"
+
     try:
         # CHUNK 1: Infra
-        primary = start_coordinator(log_file_handle)
+        primary = start_coordinator(primary_port, log_file_handle)
         time.sleep(POST_PRIMARY_SLEEP)
 
         # CHUNK 2: Workers (Parametrized count)
-        workers = start_workers(num_workers, log_file_handle)
+        workers = start_workers(num_workers, log_file_handle, dynamic_primary_addr)
         time.sleep(POST_WORKERS_SLEEP)
 
         # CHUNK 3: Optional Ghost (Toggle this as needed)
-        register_ghosts(num_ghosts, PRIMARY_GRPC)
+        register_ghosts(num_ghosts, dynamic_primary_addr)
 
         # CHUNK 4: Scenarios (Loop through your list)
         for scenario in SCENARIOS:
-            run_cli_test(scenario["name"], scenario["args"], log_file_handle)
+            run_cli_test(scenario["name"], scenario["args"], log_file_handle, dynamic_primary_addr)
 
     finally:
         print("Cleaning up...")
         if primary: primary.terminate()
         for w in workers: w.terminate()
-        log_file_handle.close()
-# END
+        # log_file_handle.close()
+def parametric_test_suite(log_file_handle, num_workers=3, num_ghosts=1):
+    # log_file_handle = open(create_unique_logfile_handle(), "a") # Open in Append mode (was just LOGFILE)
+    log_separator(log_file_handle, "NEW TEST SESSION STARTED")
 
-# BEGIN old big test
+    primary = None
+    workers = []
 
-def simple_log_separator(msg):
-    with open(LOG_FILE, "a") as f:
-        f.write(f"\n{'='*20} {msg} {'='*20}\n")
-
-def og_test_monolith():
-    if os.path.exists(LOG_FILE):
-        os.remove(LOG_FILE)
-
-    log_file_handle = open(LOG_FILE, "a")
+    primary_port = get_free_port()
+    dynamic_primary_addr = f"127.0.0.1:{primary_port}"
 
     try:
-        # 1. Start Coordinator (Primary)
-        print(f"Starting Coordinator at {PRIMARY_GRPC}...")
-        primary_proc = subprocess.Popen(
-            [PYTHON_BIN, "-u", PRIMARY_NODE, "--grpc-port", "50051"],
-            stdout=log_file_handle, stderr=log_file_handle
-        )
+        # CHUNK 1: Infra
+        primary = start_coordinator(primary_port, log_file_handle)
         time.sleep(POST_PRIMARY_SLEEP)
 
-        # 2. Start Secondaries (Workers)
-        # We pass the coordinator address directly as expected by your new main()
-        workers = []
-        print("Starting gRPC Secondary Nodes...")
-        for i in range(1, 4):
-            port = 50060 + i
-            p = subprocess.Popen(
-                [
-                    PYTHON_BIN, "-u", WORKER_NODE_GRPC,
-                    "--port", str(port),
-                    "--coordinator", PRIMARY_GRPC,
-                    "--node-id", f"Worker-{port}"
-                ],
-                stdout=log_file_handle, stderr=log_file_handle
-            )
-            workers.append(p)
-
+        # CHUNK 2: Workers (Parametrized count)
+        workers = start_workers(num_workers, log_file_handle, dynamic_primary_addr)
         time.sleep(POST_WORKERS_SLEEP)
 
-        # 3. Register a Fake Node using gRPC
-        # This replaces the urllib/json "Ghost-Node" logic
-        print("Registering Ghost-Node via gRPC (Testing Partial Failure)...")
-        channel = grpc.insecure_channel(PRIMARY_GRPC)
-        stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
+        # CHUNK 3: Optional Ghost (Toggle this as needed)
+        register_ghosts(num_ghosts, dynamic_primary_addr)
 
-        ghost_request = primes_pb2.RegisterRequest(
-            node_id="Ghost-Node",
-            host="127.0.0.1",
-            port=9998  # Dead port
-        )
-        try:
-            stub.RegisterNode(ghost_request)
-        except grpc.RpcError as e:
-            print(f"Ghost registration reported: {e.code()}")
+        # CHUNK 4: Scenarios (Loop through your list)
+        for scenario in SCENARIOS:
+            run_cli_test(scenario["name"], scenario["args"], log_file_handle, dynamic_primary_addr)
 
-        print("Initiating Distributed Compute Request...")
-        simple_log_separator("CLI OUTPUT START")
-        cli_cmd = [
-            PYTHON_BIN, CLIENT_CLI,
-            "--low", "0",
-            "--high", "1000000",
-            "--exec", "distributed",
-            "--primary", PRIMARY_GRPC, # Change to --coordinator
-            "--mode", "count"
-        ]
-
-        subprocess.run(cli_cmd, stdout=log_file_handle, stderr=log_file_handle)
-        time.sleep(POST_WORKERS_SLEEP)
-        simple_log_separator("REQUEST TWO")
-        cli_cmd = [
-            PYTHON_BIN, CLIENT_CLI,
-            "--low", "0",
-            "--high", "1000000",
-            "--exec", "distributed",
-            "--primary", PRIMARY_GRPC, # Change to --coordinator
-            "--mode", "list"
-        ]
-        subprocess.run(cli_cmd, stdout=log_file_handle, stderr=log_file_handle)
-        simple_log_separator("CLI OUTPUT END")
-
-
-        print(f"Test complete. Check '{LOG_FILE}' for results.")
-
-    except Exception as e:
-        print(f"System Test encountered error: {e}")
     finally:
-        print("Cleaning up cluster...")
-        primary_proc.terminate()
-        for w in workers:
-            w.terminate()
-        log_file_handle.close()
+        print("Cleaning up...")
+        if primary: primary.terminate()
+        for w in workers: w.terminate()
+        # log_file_handle.close()
 
-# END old big test
+# END
+
+# BEGIN glue rand test
+import random
+
+def run_randomized_glue_suite(log_handle, iterations=10):
+    log_separator(log_handle, f"STARTING {iterations} RANDOMIZED GLUE TESTS")
+
+    for i in range(1, iterations + 1):
+        # 1. Randomize parameters
+        low = random.randint(2, 500)
+        high = random.randint(low + 100, 2000)
+        chunk = random.randint(10, 100)
+        mode = random.choice(["count", "list"])
+        strategy = random.choice(["threads", "processes"])
+
+        # 2. Build the command
+        test_args = [
+            PYTHON_BIN, CLIENT_CLI,
+            "--low", str(low),
+            "--high", str(high),
+            "--mode", mode,
+            "--exec", strategy,
+            "--chunk", str(chunk)
+        ]
+
+        # 3. Print a "Reproduction String" for debugging
+        repro_cmd = " ".join(test_args)
+        log_handle.write(f"\n[Test {i}/10] Executing: {repro_cmd}\n")
+        log_handle.flush() # Ensure it writes immediately in case of crash
+
+        # 4. Execute
+        result = subprocess.run(
+            test_args,
+            stdout=log_handle,
+            stderr=log_handle,
+            text=True
+        )
+
+        if result.returncode != 0:
+            log_handle.write(f"!!! TEST {i} FAILED with exit code {result.returncode} !!!\n")
+        else:
+            log_handle.write(f"--- TEST {i} PASSED ---\n")
+
+    log_separator(log_handle, "RANDOMIZED GLUE TESTS COMPLETE")
+# END
+
 
 def main():
-  # og_test_monolith()
-  # time.sleep(2)
-  parametric_test_suite();
+  log_file_handle = open(create_unique_logfile_handle(), "a")
+  try:
+    parametric_test_suite(log_file_handle);
+    time.sleep(2)
+    run_randomized_glue_suite(log_file_handle)
+  finally:
+    log_file_handle.close()
 
 if __name__ == "__main__":
     main()

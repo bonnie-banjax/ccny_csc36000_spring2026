@@ -96,7 +96,42 @@ def _project_root_heuristic(target): # BEGIN ###
 
 
 # BEGIN ###
+
+import os
+from datetime import datetime
+
 def log_inventory(root, inventory, log_place, log_name="inventory"):
+  # os.makedirs with exist_ok=True replaces log_place.mkdir(parents=True, ...)
+  os.makedirs(log_place, exist_ok=True)
+
+  timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+  # os.path.join replaces the / operator
+  log_file_name = f"{log_name}_{timestamp}.log"
+  log_file = os.path.join(log_place, log_file_name)
+
+  with open(log_file, "w") as f:
+    f.write(f"PROJECT ROOT: {root}\n")
+    f.write("-" * 40 + "\n")
+
+    leaf_idx = 0
+    for depth, level in enumerate(inventory):
+      f.write(f"DEPTH {depth}:\n")
+      for path in level:
+        # os.path.relpath replaces path.relative_to(root)
+        rel_path = os.path.relpath(path, root)
+
+        # os.path.isfile replaces path.is_file()
+        is_leaf = os.path.isfile(path)
+
+        marker = f"[{leaf_idx}] (FILE)" if is_leaf else "(DIR )"
+        f.write(f" {marker} {rel_path}\n")
+
+        if is_leaf:
+          leaf_idx += 1
+      f.write("\n")
+
+def _log_inventory(root, inventory, log_place, log_name="inventory"):
 
   log_place.mkdir(parents=True, exist_ok=True)
   timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -155,69 +190,16 @@ def _reflexive_inventory(root): # BEGIN
   return inventory
 # END
 
-
-def _reflexive_inventory_git(root, inventory=None): # BEGIN
-
-  if not root: raise RuntimeError("Root not provided")
-
-  inventory = [] if inventory is None else inventory
-  queue = [os.path.abspath(root)]   # Ensure root is an absolute string path
-
-  while queue:
-    level_contents = []
-    next_queue = []
-
-    for current_dir in queue:
-      try:    # os.listdir returns names, not full paths
-        items = os.listdir(current_dir)
-      except OSError:
-        continue
-      for name in items:
-        full_path = os.path.join(current_dir, name)
-        if name.startswith('.') and name != '.git':
-          continue
-        level_contents.append(full_path)
-        if os.path.isdir(full_path) and name != '.git':
-          next_queue.append(full_path)
-    if level_contents:
-      inventory.append(level_contents)
-    queue = next_queue
-
-  return root, inventory
-# END
-
-def get_reflexive_inventory(): # BEGIN
-
-  root = PROJECT_ROOT # get_project_root()
-
-  if not root:
-    raise RuntimeError("Hermetic failure: Could not find .git root anchor.")
-
-  inventory = []
-  queue = [root]
-
-  while queue:
-    level_contents = []
-    next_queue = []
-
-    for current_dir in queue:
-      for item in current_dir.iterdir():
-        # RULE: Ignore hidden things, EXCEPT we want to see the .git
-        # folder itself at the root level, but NEVER go inside it.
-        if item.name.startswith('.') and item.name != '.git':
-          continue
-        level_contents.append(item)
-        if item.is_dir() and item.name != '.git':
-          next_queue.append(item)
-
-    if level_contents:
-      inventory.append(level_contents)
-    queue = next_queue
-
-  return root, inventory
-# END ###
-
 def get_terminal_leaves(inventory):
+    leaves = []
+    for level in inventory:
+        for path in level:
+            if os.path.isfile(path):
+                leaves.append(path)
+    # Now we have an indexed list of every file in the project
+    return {i: path for i, path in enumerate(leaves)}
+
+def _get_terminal_leaves(inventory):
     leaves = []
     for level in inventory:
         for path in level:
@@ -319,7 +301,7 @@ def synthesize_infra_list(destination: Path):
     if not y_file.exists():
         print(f"Synthesizing {y_file}...")
         y_file.write_text(compose_content)
-# END ###
+# END   ###
 
 # BEGIN ### find_relative_path
 def find_relative_path(filename: str, inventory_dict: dict, root: Path) -> str:
@@ -341,13 +323,13 @@ def find_relative_path(filename, inventory_dict, root):
       return os.path.relpath(path, root_abs)
 
   raise FileNotFoundError(f"Could not find {filename} in project inventory.")
-# END ###
+# END   ###
 
 # BEGIN
 def find_dir_in_inventory(targ_dir, inventory):
   for level in inventory:
     for path in level:
-      if path.is_dir() and path.name == targ_dir:
+      if os.path.isdir(path) and os.path.basename(path) == targ_dir:
         return path
   return None
 
@@ -367,10 +349,27 @@ def focused_dir_to_sys_path(inventory):
           sys.path.insert(0, str(path))
   return None
 
+
+# BEGIN
+
 def env_make(root, inventory):
-  extra_paths = ":".join([str(p) for level in inventory for p in level if p.is_dir()])
+  # Collect all directory paths from the nested list structure
+  # os.path.isdir() replaces p.is_dir()
+  # str(p) is redundant as p is already a string in the new inventory
+  dir_list = [p for level in inventory for p in level if os.path.isdir(p)]
+
+  # os.pathsep (':' on Unix, ';' on Windows) replaces the hardcoded ":"
+  extra_paths = os.pathsep.join(dir_list)
+
   env = os.environ.copy()
-  env["PYTHONPATH"] = extra_paths + (":" + env.get("PYTHONPATH", "") if env.get("PYTHONPATH") else "")
+
+  # Prepend the new paths to the existing PYTHONPATH if it exists
+  current_pythonpath = env.get("PYTHONPATH", "")
+  if current_pythonpath:
+    env["PYTHONPATH"] = f"{extra_paths}{os.pathsep}{current_pythonpath}"
+  else:
+    env["PYTHONPATH"] = extra_paths
+
   return env
 # END
 
@@ -388,7 +387,7 @@ def create_isolated_sandbox(src="/app_host", dst="/app_sandbox"):
 
 ################################################################################
 
-# BEGIN
+# BEGIN Spawn Service (simple)
 def spawn_service(root, compose_path, pod_name, service_name, count):
 
   up_cmd = [
@@ -405,8 +404,10 @@ def spawn_service(root, compose_path, pod_name, service_name, count):
   subprocess.run(up_cmd, cwd=root, check=True)
 # END
 
-# BEGIN
+# BEGIN Spawn Service (complex)
 def spawn_service_complex(root, compose_path, pod_name, service_name, profiles=None, count=1):
+  """spawn_service_complex(root, relative_compose_path, SNAKE_PIT, "isolated", ["isolated"] 1) """
+
   # Initialize the command base
   up_cmd = ["podman-compose"]
 
@@ -426,23 +427,21 @@ def spawn_service_complex(root, compose_path, pod_name, service_name, profiles=N
   print(f"Executing: {' '.join(up_cmd)} at {root}")
   subprocess.run(up_cmd, cwd=root, check=True)
 # END
+
 ################################################################################
 
-def dry_run(): # BEGIN ###
+def dry_run(root): # BEGIN ###
   print("Running in Dry-Run mode...")
-  root, inventory = get_reflexive_inventory()
+  inventory = _reflexive_inventory(root)
   logs_dir = find_dir_in_inventory("logs", inventory)
   log_inventory(root, inventory, logs_dir)
   print(f"Inventory dry ran and logged to {logs_dir}/inventory.log")
   print("No container actions performed.")
 # END ###
 
-def run_all_tests(): # BEGIN ###
+def run_all_tests(root): # BEGIN ###
 
-  caller_file = inspect.getfile(inspect.currentframe())
-  script_path = Path(caller_file).resolve()
-
-  root, inventory = get_reflexive_inventory()
+  inventory = _reflexive_inventory(root)
   file_map = get_terminal_leaves(inventory)
 
   logs_dir = find_dir_in_inventory("logs", inventory)
@@ -466,6 +465,7 @@ def run_all_tests(): # BEGIN ###
     check=True,      # Raise exception if script fails
     text=True        # Handle output as strings instead of bytes
   )
+
   return True
 # END ###
 
@@ -526,31 +526,7 @@ def bootstrap_with_source_capture():
   # send it to a container, or verify its own integrity.
   return captured_source
 
-# BEGIN
-def spoon_feed_source(TARGET, FLAG):
-
-  # SNAKE_PIT = "snake_pit"
-  STRAPPED_BOOT = bootstrap_with_source_capture()
-
-  exec_cmd = [
-    "podman", "exec", "-i", f"{TARGET}",
-    "python3", "-", f"{FLAG}"  # The '-' tells Python to read from stdin
-  ]
-
-  # BEGIN 3. Execute and "Pipe" the string in
-  print("[2] Teleporting bootstrapper source to container...")
-  result = subprocess.run(
-    exec_cmd,
-    input=STRAPPED_BOOT,  # This 'feeds' the string to the container's python
-    text=True,            # Ensures it treats input as a string, not bytes
-    check=True
-  ) # END
-
-  return result
-# END
-
-# BEGIN
-def spoon_feed_to_service_type(service_name, flag):
+def spoon_feed_to_service_type(service_name, source, args): # BEGIN
   cmd = [
     "podman", "ps", "--format", "{{.Names}}",
     "--filter", f"label=io.podman.compose.service={service_name}"
@@ -559,11 +535,21 @@ def spoon_feed_to_service_type(service_name, flag):
 
   for name in container_names:
     print(f"[1] Teleporting to {name}...")
-    spoon_feed_source(name, flag)
+
+    exec_cmd = [
+      "podman", "exec", "-i", f"{name}",
+      "python3", "-", f"{args}"  # The '-' tells Python to read from stdin
+    ]
+
+    result = subprocess.run(
+      exec_cmd,
+      input=source,  # This 'feeds' the string to the container's python
+      text=True,     # Ensures it treats input as a string, not bytes
+      check=True
+    )
 # END
 
-# BEGIN
-def broadcast_source(targets, flag):
+def broadcast_source(targets, flag): # BEGIN
   """
   targets: can be a single string 'snake_pit' or a list ['worker_1', 'worker_2']
   """
@@ -578,20 +564,21 @@ def broadcast_source(targets, flag):
     exec_cmd = ["podman", "exec", "-i", target, "python3", "-", flag]
     subprocess.run(exec_cmd, input=source, text=True, check=True)
 # END
+
 ################################################################################
 
-def dig_snake_pit(worker_count: int): # BEGIN ###
-  SNAKE_PIT = "snake_pit"
-  root, inventory = get_reflexive_inventory()
+def dig_snake_pit(root, worker_count: int): # BEGIN ###
+
+  inventory = _reflexive_inventory(root)
   file_map = get_terminal_leaves(inventory)
 
 
-  core_dir = find_dir_in_inventory("core", inventory)
+  core_dir  = find_dir_in_inventory("core",  inventory)
   infra_dir = find_dir_in_inventory("infra", inventory)
   tests_dir = find_dir_in_inventory("tests", inventory)
-  logs_dir = find_dir_in_inventory("logs", inventory)
+  logs_dir  = find_dir_in_inventory("logs",  inventory)
 
-  log_inventory(root, inventory, logs_dir)
+  # log_inventory(root, inventory, logs_dir)
 
   # BEGIN root relative
   compose_filename = "compose.yaml"
@@ -606,21 +593,24 @@ def dig_snake_pit(worker_count: int): # BEGIN ###
 
   print(f"--- Starting Hermetic Environment [Reflexive Mode] ---")
 
+
   # BEGIN pod spinning logic
   try:
-    # spawn_service(root, relative_compose_path, SNAKE_PIT, "isolated", ["isolated"] 1)
+    SNAKE_PIT = "snake_pit"
+    SOURCE = bootstrap_with_source_capture()
+    active = (0, 1, 0, 0, 1, 0, 0, 0, 0)
 
-    spawn_service(root, relative_compose_path, SNAKE_PIT, "isolated", 1)
-    # spawn_service(root, relative_compose_path, SNAKE_PIT, "primary", 1)
-    # spawn_service(root, relative_compose_path, SNAKE_PIT, "worker", worker_count)
+    if active[0]: spawn_service(root, relative_compose_path, SNAKE_PIT, "isolated", 1)
+    if active[1]: spawn_service(root, relative_compose_path, SNAKE_PIT, "primary",  1)
+    if active[2]: spawn_service(root, relative_compose_path, SNAKE_PIT, "worker", worker_count)
 
-    spoon_feed_to_service_type("isolated", "--run-all")
-    # spoon_feed_to_service_type("primary", "--run-all")
-    # spoon_feed_to_service_type("worker", "--run-all")
+    if active[3]: spoon_feed_to_service_type("isolated", SOURCE, "--run-all")
+    if active[4]: spoon_feed_to_service_type("primary",  SOURCE, "--run-all")
+    if active[5]: spoon_feed_to_service_type("worker",   SOURCE, "--run-all")
 
-    # spoon_feed_to_service_type("isolated", "--dry-run")
-    # spoon_feed_to_service_type("primary", "--dry-run")
-    # spoon_feed_to_service_type("worker", "--dry-run")
+    if active[6]: spoon_feed_to_service_type("isolated",SOURCE, "--dry-run")
+    if active[7]: spoon_feed_to_service_type("primary", SOURCE, "--dry-run")
+    if active[8]: spoon_feed_to_service_type("worker",  SOURCE, "--dry-run")
 
   # END
   except subprocess.CalledProcessError as e:
@@ -666,11 +656,11 @@ if __name__ == "__main__": # BEGIN
 
   match (args.dry_run, args.run_all):
     case (True, _):
-      dry_run()
+      dry_run(PROJECT_ROOT)
     case (_, True):
-      run_all_tests()
+      run_all_tests(PROJECT_ROOT)
     case (False, False):
-      dig_snake_pit(args.workers)
+      dig_snake_pit(PROJECT_ROOT, args.workers)
 
 
 # END                          ###
