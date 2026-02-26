@@ -97,43 +97,44 @@ def compute_partitioned(request):
   pool = None
   try:
     if request.secondary_exec in (primes_pb2.SINGLE, primes_pb2.THREADS):
-      return [
-        _work_chunk(r[0], r[1], request.mode)
+      # Generate raw results for the ranges
+      results = [
+          _work_chunk(r[0], r[1], request.mode)
+          for r in iter_ranges(
+              request.low,
+              request.high,
+              request.chunk
+          )
+      ]
+    else:
+      workers = request.secondary_workers or mp.cpu_count()
+      target_mode = request.mode
+      results = []
+
+      ctx = mp.get_context('spawn')
+      pool = ctx.Pool(processes=workers)
+      # pool = mp.Pool(processes=workers)
+
+      task_generator = (
+        (r[0], r[1], target_mode)
         for r in iter_ranges(
           request.low,
           request.high,
           request.chunk
         ) # END_FOR
-      ] # END_RETRUN
+      ) # END_TASK_GENERATOR
 
-    workers = request.secondary_workers or mp.cpu_count()
-    target_mode = request.mode
-    results = []
-
-    ctx = mp.get_context('spawn')
-    pool = ctx.Pool(processes=workers)
-    # pool = mp.Pool(processes=workers)
-
-    task_generator = (
-      (r[0], r[1], target_mode)
-      for r in iter_ranges(
-        request.low,
-        request.high,
-        request.chunk
-      ) # END_FOR
-    ) # END_TASK_GENERATOR
-
-    try:
-      for res in pool.imap_unordered(
-        worker_task_wrapper,
-        task_generator,
-        chunksize=10
-      ):
-        results.append(res)
-    finally:
-      pool.terminate()
-      pool.join()
-
+      try:
+        for res in pool.imap_unordered(
+          worker_task_wrapper,
+          task_generator,
+          chunksize=10
+        ):
+          results.append(res)
+      finally:
+        pool.terminate()
+        pool.join()
+#
     results.sort(key=lambda x: x.slice[0])
     response = primes_pb2.ComputeResponse()
 

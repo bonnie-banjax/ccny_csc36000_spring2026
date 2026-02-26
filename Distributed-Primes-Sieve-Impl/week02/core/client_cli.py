@@ -7,12 +7,25 @@ import sys
 import time
 import urllib.request
 
+import socket
+import subprocess
+
 from typing import List, Tuple
 
 import grpc
 import primes_pb2
 import primes_pb2_grpc
 
+
+
+# BEGIN duplicated port helper
+def get_free_port() -> int:
+    """Asks the OS for a free ephemeral port and returns it."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+# END
 
 # def _grpc_compute(target: str, request: primes_pb2.ComputeRequest) -> primes_pb2.ComputeResponse:
 #     """A clean, sympathetic network call. No dictionary translation."""
@@ -58,7 +71,107 @@ def _grpc_compute(primary: str, args) -> primes_pb2.ComputeResponse:
         print(f"_grpc_compute error: {e}", file=sys.stderr)
         return primes_pb2.ComputeResponse()
 
+# BEGIN delegation hack
+def execute_ephemeral_work(args: argparse.Namespace):
+    """
+    Spawns a local Secondary Node, executes the request, and cleans up.
+    """
+    worker_port = get_free_port()
+    worker_addr = f"127.0.0.1:{worker_port}"
 
+    # Inside execute_ephemeral_work:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    worker_path = os.path.join(current_dir, "secondary_node.py")
+
+    worker_cmd = [
+        sys.executable, "-u", worker_path,  # Use absolute path
+        "--port", str(worker_port),
+        "--node-id", "Ephemeral-Worker",
+        "--coordinator", ""
+]
+
+    print(f"[@] Launching ephemeral worker on {worker_addr}...")
+
+    # Start the worker subprocess
+    # We redirect stderr to stdout to capture all worker logs in one place
+    worker_proc = subprocess.Popen(
+        worker_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True
+    )
+
+    try:
+        # --- Readiness Probe ---
+        # We wait for the gRPC server to actually start accepting connections
+        channel = grpc.insecure_channel(worker_addr)
+        retry_count = 0
+        while retry_count < 50:
+            try:
+                # This check doesn't send a full RPC, just tests the transport
+                grpc.channel_ready_future(channel).result(timeout=0.1)
+                break
+            except (grpc.FutureTimeoutError, grpc.RpcError):
+                retry_count += 1
+                time.sleep(0.1)
+
+        if retry_count == 50:
+            raise RuntimeError("Ephemeral worker failed to start in time.")
+
+        # --- Work Execution ---
+        # Map the CLI arguments to the ComputeRequest
+        stub = primes_pb2_grpc.WorkerServiceStub(channel)
+
+        # BEGIN taken from above
+        # mode_map = {"count": 0, "list": 1}
+        # exec_map = {"single": 0, "threads": 1, "processes": 2}
+        # return primes_pb2.ComputeRequest(
+        #     low=args.low,
+        #     high=args.high,
+        #     mode=mode_map.get(args.mode, 0),
+        #     chunk=args.chunk,
+        #     secondary_exec=exec_map.get(args.secondary_exec, 2),
+        #     secondary_workers=args.secondary_workers or 0,
+        #     max_return_primes=args.max_return_primes,
+        #     include_per_node=args.include_per_node
+        # )
+        # END
+
+        # BEGIN what was generated
+        mode_map = {"count": 0, "list": 1}
+        exec_map = {"single": 0, "threads": 1, "processes": 2}
+        # Note: We call ComputeRange because that is the method
+        # the Secondary Node's WorkerService exposes.
+        request = primes_pb2.ComputeRequest(
+            low=args.low,
+            high=args.high,
+            mode=mode_map.get(args.mode, 0),
+            chunk=args.chunk,
+            secondary_exec=primes_pb2.THREADS, # Or map from args.exec
+            # secondary_exec=exec_map.get(args.secondary_exec, 2),
+            max_return_primes=args.max_return_primes
+        )
+        # END
+
+        response = stub.ComputeRange(request)
+        return response
+    except grpc.RpcError as e:
+        print(f"[@] gRPC Error: {e.details()}")
+        # Terminate and read the buffer
+        worker_proc.terminate()
+        worker_output, _ = worker_proc.communicate()
+        if worker_output:
+            print(f"[@] Worker Internal Logs:\n{worker_output}")
+        raise
+    finally:
+        # --- Cleanup ---
+        print("[@] Shutting down ephemeral worker...")
+        worker_proc.terminate()
+        try:
+            worker_proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            worker_proc.kill()
+# END
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
@@ -74,7 +187,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--time", action="store_true")
 
     # Distributed options
-    ap.add_argument("--primary", default=None, help="Primary URL, e.g. http://134.74.160.1:9200")
+    ap.add_argument("--primary", default=None, help="Primary port, e.g. 127.0.0.1:50051")
     ap.add_argument("--secondary-exec", choices=["single", "threads", "processes"], default="processes")
     ap.add_argument("--secondary-workers", type=int, default=None)
     ap.add_argument("--include-per-node", action="store_true")
@@ -96,7 +209,8 @@ def main(argv: list[str]) -> int:
         t0 = time.perf_counter()
         resp = _grpc_compute(args.primary, args)
         t1 = time.perf_counter()
-
+    else:
+        resp = execute_ephemeral_work(args)
 # BEGIN ### ################################################################ ###
 #NOTE this is almost entirely unchecked (generated), but it's "just" reporting #
         # if resp.total_primes == 0:
@@ -182,7 +296,6 @@ def main(argv: list[str]) -> int:
             )
 
 # END
-
 
 # BEGIN
         if args.time:
