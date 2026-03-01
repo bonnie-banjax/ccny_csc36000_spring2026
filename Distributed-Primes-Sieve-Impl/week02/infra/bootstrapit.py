@@ -35,8 +35,6 @@ class BootConfig:
   CONTAINER_ENGINE = None
   GLOBAL_INVENTORY = None
 
-# Convert class attributes to dictionary
-# config_dict = {k: v for k, v in Config.__dict__.items() if not k.startswith("__")}
 
 
 ################################################################################
@@ -59,16 +57,12 @@ def get_project_root(state: dict): # BEGIN ###
   if os.environ.get("IS_BOOTSTRAPPED"): # ("IS_BOOTSTRAPPED") == "1"
     return Path.cwd() # return Path("/app")
 
-
   result = _project_root_heuristic(".git")
   if result is not None:
     return result
 
-
   if (Path(__file__).is_relative_to(Path.cwd())):
     return Path.cwd()
-
-
 
   return False
 # END ###
@@ -94,11 +88,9 @@ def _project_root_heuristic(target): # BEGIN ###
   return None # Fallback
 # END ###
 
-
 # BEGIN ###
 
-import os
-from datetime import datetime
+
 
 def log_inventory(root, inventory, log_place, log_name="inventory"):
   # os.makedirs with exist_ok=True replaces log_place.mkdir(parents=True, ...)
@@ -348,7 +340,7 @@ def focused_dir_to_sys_path(inventory):
         if str(path) not in sys.path:
           sys.path.insert(0, str(path))
   return None
-
+# END
 
 # BEGIN
 
@@ -373,6 +365,31 @@ def env_make(root, inventory):
   return env
 # END
 
+def env_make_with_venv_path(root, inventory):
+    # 1. Collect all directory paths for PYTHONPATH
+    dir_list = [p for level in inventory for p in level if os.path.isdir(p)]
+    extra_python_paths = os.pathsep.join(dir_list)
+
+    # 2. Start with a fresh copy of the current environment
+    env = os.environ.copy()
+
+    # 3. AUTO-VENV PATH INJECTION
+    # Get the bin/Scripts directory of the current Python interpreter
+    # This ensures subprocesses stay in the venv we pivoted into.
+    current_venv_bin = os.path.dirname(sys.executable)
+
+    existing_path = env.get("PATH", "")
+    if current_venv_bin not in existing_path:
+        env["PATH"] = f"{current_venv_bin}{os.pathsep}{existing_path}"
+
+    # 4. PYTHONPATH INJECTION
+    current_pythonpath = env.get("PYTHONPATH", "")
+    if current_pythonpath:
+        env["PYTHONPATH"] = f"{extra_python_paths}{os.pathsep}{current_pythonpath}"
+    else:
+        env["PYTHONPATH"] = extra_python_paths
+
+    return env
 
 def create_isolated_sandbox(src="/app_host", dst="/app_sandbox"):
   if os.path.exists(dst):
@@ -430,6 +447,53 @@ def spawn_service_complex(root, compose_path, pod_name, service_name, profiles=N
 
 ################################################################################
 
+# BEGIN Condensed Versions of modular bootenv
+def ensure_venv(venv_dir):
+  if sys.prefix != sys.base_prefix:
+    return True
+  if not os.path.exists(venv_dir):
+    venv.create(venv_dir, with_pip=True)
+  if sys.platform == "win32":
+    python_exe = os.path.join(venv_dir, "Scripts", "python.exe")
+  else:
+    python_exe = os.path.join(venv_dir, "bin", "python")
+  os.execv(python_exe, [python_exe] + sys.argv)
+  return False
+# ###
+def install_package(package_name):
+  original_argv = sys.argv.copy()
+  sys.argv = [sys.executable, "install", package_name]
+  try:
+    runpy.run_module("pip", run_name="__main__")
+  except SystemExit:
+    pass
+  finally:
+    sys.argv = original_argv
+  return True
+# ###
+def validate_package(package_name):
+  import_name = package_name.replace('-', '_')
+  try:
+    importlib.invalidate_caches()
+    module = importlib.import_module(import_name)
+    path = getattr(module, '__file__', 'Unknown Location')
+    return True
+  except ImportError:
+    return False
+# ###
+def driver(venv_dir, package_name):
+  ensure_venv(venv_dir)
+  install_package(package_name)
+  success = validate_package(package_name)
+  if success:
+    sys.exit(0) # return True
+  else:
+    sys.exit(1) # return False
+# ###
+# END   Condensed Versions of modular bootenv
+
+################################################################################
+
 def dry_run(root): # BEGIN ###
   print("Running in Dry-Run mode...")
   inventory = _reflexive_inventory(root)
@@ -441,11 +505,19 @@ def dry_run(root): # BEGIN ###
 
 def run_all_tests(root): # BEGIN ###
 
+  ensure_venv(".auto_venv")
+
+# # BEGIN dealing with PATH
+#   venv_bin = os.path.abspath(os.path.join(root, ".auto_venv", "bin"))
+#   os.environ["PATH"] = venv_bin + os.pathsep + os.environ.get("PATH", "")
+# # END
+
+
   inventory = _reflexive_inventory(root)
   file_map = get_terminal_leaves(inventory)
 
   logs_dir = find_dir_in_inventory("logs", inventory)
-  log_inventory(root, inventory, logs_dir)
+  # log_inventory(root, inventory, logs_dir)
 
   req_filename = "requirements.txt"
   relative_req_path = find_relative_path(req_filename, file_map, root)
@@ -453,7 +525,9 @@ def run_all_tests(root): # BEGIN ###
   suite_filename = "integration-suite.py"
   relative_suite_path = find_relative_path(suite_filename, file_map, root)
 
-  env = env_make(root, inventory)
+  # env = env_make(root, inventory)
+  env = env_make_with_venv_path(root, inventory)
+
 
   result1 = subprocess.run(
     [sys.executable, "-m", "pip", "install", "-r", relative_req_path],
@@ -567,8 +641,8 @@ def broadcast_source(targets, flag): # BEGIN
 
 ################################################################################
 
-def dig_snake_pit(root, worker_count: int): # BEGIN ###
-
+def spin_podman_up(root, worker_count: int): # BEGIN ###
+  """RIP: 'dig_snake_pit()' """
   inventory = _reflexive_inventory(root)
   file_map = get_terminal_leaves(inventory)
 
@@ -623,7 +697,6 @@ def dig_snake_pit(root, worker_count: int): # BEGIN ###
 
 # END ###
 
-
 ################################################################################
 
 if __name__ == "__main__": # BEGIN
@@ -641,6 +714,10 @@ if __name__ == "__main__": # BEGIN
     action="store_true",
     help="Run the integration test suite")
   parser.add_argument(
+    "--container",
+    action="store_true",
+    help="Start containerized project")
+  parser.add_argument(
     "--workers",
     type=int,
     default=3,
@@ -649,18 +726,19 @@ if __name__ == "__main__": # BEGIN
   args = parser.parse_args()
 
 
+
   if args.here:
     PROJECT_ROOT = Path.cwd()
   else:
     PROJECT_ROOT = get_project_root(BootConfig())
 
-  match (args.dry_run, args.run_all):
-    case (True, _):
+  match (args.dry_run, args.run_all, args.container):
+    case (True, _, _):
       dry_run(PROJECT_ROOT)
-    case (_, True):
+    case (_, True, _):
       run_all_tests(PROJECT_ROOT)
-    case (False, False):
-      dig_snake_pit(PROJECT_ROOT, args.workers)
+    case (_, _,True):
+      spin_podman_up(PROJECT_ROOT, args.workers)
 
 
 # END                          ###

@@ -1,4 +1,5 @@
 
+
 # BEGIN awful hack
 import sys
 from pathlib import Path
@@ -33,6 +34,7 @@ import grpc
 import primes_pb2
 import primes_pb2_grpc
 from datetime import datetime
+import random
 
 PRIMARY_GRPC = "127.0.0.1:50051"
 PYTHON_BIN = "python3"
@@ -127,75 +129,99 @@ def run_cli_test(test_label, extra_args, log_handle, prim_grpc):
 
     log_separator(log_handle, f"CLI END: {test_label}")
 
-def parametric_test_suite(log_file_handle, num_workers=3, num_ghosts=1):
-    # log_file_handle = open(create_unique_logfile_handle(), "a") # Open in Append mode (was just LOGFILE)
+# BEGIN random (ish) scenario generator
+
+def standard_scenarios():
+  return [
+    {"name": "Standard Count", "args": ["--low", "2", "--high", "1000000", "--mode", "count"]},
+    {"name": "Primes List",   "args": ["--low", "2", "--high", "1000", "--mode", "list"]},
+    {"name": "Small Chunks",  "args": ["--low", "2", "--high", "100000", "--chunk", "1000"]},
+  ]
+
+def get_random_scenarios(iterations=10):
+    """
+    Generates a list of randomized scenarios in the established format.
+    """
+    random_scenarios = []
+
+    for i in range(1, iterations + 1):
+        # 1. Randomize parameters
+        low = random.randint(2, 500)
+        high = random.randint(low + 100, 2000)
+        chunk = random.randint(10, 100)
+        mode = random.choice(["count", "list"])
+        strategy = random.choice(["threads", "processes"])
+
+        # 2. Build the scenario dictionary
+        # We include the strategy in the name for better log visibility
+        scenario = {
+            "name": f"Random-{strategy.upper()}-{i:02d}",
+            "args": [
+                "--low", str(low),
+                "--high", str(high),
+                "--mode", mode,
+                # "--exec", strategy,
+                "--chunk", str(chunk),
+            ]
+        }
+        random_scenarios.append(scenario)
+
+    return random_scenarios
+# END
+
+def parametric_test_suite(log_file_handle, num_workers=None, num_ghosts=None):
     log_separator(log_file_handle, "NEW TEST SESSION STARTED")
 
     primary = None
     workers = []
+    RANDOM_SCENARIOS = []
+    STANDARD_SCENARIOS = []
+
+    if num_workers is None and num_ghosts is None:
+      RANDOM_SCENARIOS = get_random_scenarios()
+    else: STANDARD_SCENARIOS = standard_scenarios()
+
+    if num_workers is None: num_workers = random.randint(1, 10)
+    if num_ghosts is None: num_ghosts = random.randint(1, 10)
 
     primary_port = get_free_port()
     dynamic_primary_addr = f"127.0.0.1:{primary_port}"
 
     try:
-        # CHUNK 1: Infra
         primary = start_coordinator(primary_port, log_file_handle)
         time.sleep(POST_PRIMARY_SLEEP)
 
-        # CHUNK 2: Workers (Parametrized count)
         workers = start_workers(num_workers, log_file_handle, dynamic_primary_addr)
         time.sleep(POST_WORKERS_SLEEP)
 
-        # CHUNK 3: Optional Ghost (Toggle this as needed)
         register_ghosts(num_ghosts, dynamic_primary_addr)
 
-        # CHUNK 4: Scenarios (Loop through your list)
-        for scenario in SCENARIOS:
-            run_cli_test(scenario["name"], scenario["args"], log_file_handle, dynamic_primary_addr)
-
+        nDex = 1
+        if STANDARD_SCENARIOS:
+          for scenario in STANDARD_SCENARIOS:
+            print(f"[Test: {nDex}]")
+            run_cli_test(
+              scenario["name"], scenario["args"],
+              log_file_handle, dynamic_primary_addr
+            ); nDex += 1
+        if RANDOM_SCENARIOS:
+          for scenario in RANDOM_SCENARIOS:
+            print(f"[Test: {nDex}]")
+            run_cli_test(
+              scenario["name"], scenario["args"],
+              log_file_handle, dynamic_primary_addr
+            ); nDex += 1
     finally:
         print("Cleaning up...")
         if primary: primary.terminate()
         for w in workers: w.terminate()
-        # log_file_handle.close()
-def parametric_test_suite(log_file_handle, num_workers=3, num_ghosts=1):
-    # log_file_handle = open(create_unique_logfile_handle(), "a") # Open in Append mode (was just LOGFILE)
-    log_separator(log_file_handle, "NEW TEST SESSION STARTED")
-
-    primary = None
-    workers = []
-
-    primary_port = get_free_port()
-    dynamic_primary_addr = f"127.0.0.1:{primary_port}"
-
-    try:
-        # CHUNK 1: Infra
-        primary = start_coordinator(primary_port, log_file_handle)
-        time.sleep(POST_PRIMARY_SLEEP)
-
-        # CHUNK 2: Workers (Parametrized count)
-        workers = start_workers(num_workers, log_file_handle, dynamic_primary_addr)
-        time.sleep(POST_WORKERS_SLEEP)
-
-        # CHUNK 3: Optional Ghost (Toggle this as needed)
-        register_ghosts(num_ghosts, dynamic_primary_addr)
-
-        # CHUNK 4: Scenarios (Loop through your list)
-        for scenario in SCENARIOS:
-            run_cli_test(scenario["name"], scenario["args"], log_file_handle, dynamic_primary_addr)
-
-    finally:
-        print("Cleaning up...")
-        if primary: primary.terminate()
-        for w in workers: w.terminate()
-        # log_file_handle.close()
-
 # END
 
 # BEGIN glue rand test
-import random
+
 
 def run_randomized_glue_suite(log_handle, iterations=10):
+    print(f"Starting glue checks...")
     log_separator(log_handle, f"STARTING {iterations} RANDOMIZED GLUE TESTS")
 
     for i in range(1, iterations + 1):
@@ -220,7 +246,7 @@ def run_randomized_glue_suite(log_handle, iterations=10):
         repro_cmd = " ".join(test_args)
         log_handle.write(f"\n[Test {i}/10] Executing: {repro_cmd}\n")
         log_handle.flush() # Ensure it writes immediately in case of crash
-
+        print(f"[Run: {i}]")
         # 4. Execute
         result = subprocess.run(
             test_args,
@@ -235,15 +261,21 @@ def run_randomized_glue_suite(log_handle, iterations=10):
             log_handle.write(f"--- TEST {i} PASSED ---\n")
 
     log_separator(log_handle, "RANDOMIZED GLUE TESTS COMPLETE")
+    print(f"Ending glue checks...")
 # END
 
 
 def main():
+
   log_file_handle = open(create_unique_logfile_handle(), "a")
   try:
+    print(f"[integration suite loaded]")
+    # parametric_test_suite(log_file_handle, 3, 1);
+    # time.sleep(2)
+    # run_randomized_glue_suite(log_file_handle)
+    # time.sleep(2)
     parametric_test_suite(log_file_handle);
-    time.sleep(2)
-    run_randomized_glue_suite(log_file_handle)
+
   finally:
     log_file_handle.close()
 
