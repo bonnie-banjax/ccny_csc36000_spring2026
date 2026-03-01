@@ -1,8 +1,7 @@
 
 # NOTE this needs to be run from the project's root directory for now
 
-# BEGIN ###
-
+# BEGIN dependencies / imports
 import os
 import sys
 import time
@@ -13,16 +12,11 @@ import argparse
 import subprocess
 from pathlib import Path
 from datetime import datetime
+# END   dependencies / imports
 
 ################################################################################
 
 # NOTE Global Boostrapper Instance State
-
-STATE = {
-  "project_root"     : None,
-  "container_engine" : None,
-  "global_inventory" : None
-}
 
 PROJECT_ROOT     = None
 CONTAINER_ENGINE = None
@@ -34,28 +28,24 @@ class BootConfig:
   PROJECT_ROOT     = None
   CONTAINER_ENGINE = None
   GLOBAL_INVENTORY = None
-
-
+# END
 
 ################################################################################
 
-def get_engine(): # BEGIN ###
+def get_engine():
   for tool in ["podman", "docker"]:
     if shutil.which(tool):
       return tool
   print("Error: No container engine found."); return "none"
-# END   ###
+# END
 
-def get_project_root(state: dict): # BEGIN ###
-
-  # if proj_root is not None:
-  #   return project_root
+def get_project_root(state: dict):
 
   if state.PROJECT_ROOT is not None:
     return state.PROJECT_ROOT
 
   if os.environ.get("IS_BOOTSTRAPPED"): # ("IS_BOOTSTRAPPED") == "1"
-    return Path.cwd() # return Path("/app")
+    return Path.cwd()
 
   result = _project_root_heuristic(".git")
   if result is not None:
@@ -65,9 +55,9 @@ def get_project_root(state: dict): # BEGIN ###
     return Path.cwd()
 
   return False
-# END ###
+# END
 
-def _project_root_heuristic(target): # BEGIN ###
+def _project_root_heuristic(target):
 
   activation_location = Path(os.getcwd())
   if (activation_location / target).is_dir():
@@ -86,11 +76,7 @@ def _project_root_heuristic(target): # BEGIN ###
 
   print(f"Error: Can't find project root via {target} directory.")
   return None # Fallback
-# END ###
-
-# BEGIN ###
-
-
+# END
 
 def log_inventory(root, inventory, log_place, log_name="inventory"):
   # os.makedirs with exist_ok=True replaces log_place.mkdir(parents=True, ...)
@@ -122,34 +108,9 @@ def log_inventory(root, inventory, log_place, log_name="inventory"):
         if is_leaf:
           leaf_idx += 1
       f.write("\n")
+# END
 
-def _log_inventory(root, inventory, log_place, log_name="inventory"):
-
-  log_place.mkdir(parents=True, exist_ok=True)
-  timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-  log_file = log_place / f"{log_name}_{timestamp}.log"
-
-  with open(log_file, "w") as f:
-    f.write(f"PROJECT ROOT: {root}\n")
-    f.write("-" * 40 + "\n")
-
-    leaf_idx = 0;
-    for depth, level in enumerate(inventory):
-      f.write(f"DEPTH {depth}:\n")
-      for path in level:
-        # Calculate path relative to root for clarity
-        rel_path = path.relative_to(root)
-        is_leaf = path.is_file()
-
-        marker = f"[{leaf_idx}] (FILE)" if is_leaf else "(DIR )"
-        f.write(f" {marker} {rel_path}\n")
-
-        if is_leaf:
-          leaf_idx += 1
-      f.write("\n")
-
-
-def _reflexive_inventory(root): # BEGIN
+def _reflexive_inventory(root):
 
   if not root: raise RuntimeError("Root not provided")
 
@@ -157,7 +118,6 @@ def _reflexive_inventory(root): # BEGIN
 
   inventory = []
   queue = [os.path.abspath(root)]   # Ensure root is an absolute string path
-
 
   while queue:
     level_contents = []
@@ -191,139 +151,27 @@ def get_terminal_leaves(inventory):
     # Now we have an indexed list of every file in the project
     return {i: path for i, path in enumerate(leaves)}
 
-def _get_terminal_leaves(inventory):
-    leaves = []
-    for level in inventory:
-        for path in level:
-            if path.is_file():
-                leaves.append(path)
-    # Now we have an indexed list of every file in the project
-    return {i: path for i, path in enumerate(leaves)}
 # END
 
 ################################################################################
-
-# BEGIN
-def pivot_to_venv_adaptive(project_root: Path):
-  venv_dir = project_root / ".venv"
-  # Logic for finding the python binary (Windows vs Linux)
-  python_bin = venv_dir / ("Scripts" if os.name == "nt" else "bin") / "python"
-
-  # Check: Are we already running from the venv?
-  if sys.prefix == str(venv_dir):
-    return # Already pivoted
-
-  # If venv doesn't exist, create it
-  if not venv_dir.exists():
-    print(f"Creating fresh venv at {venv_dir}...")
-    venv.create(venv_dir, with_pip=True)
-    # Optional: Install requirements immediately before pivoting
-    # subprocess.run([str(python_bin), "-m", "pip", "install", "-r", "requirements.txt"], check=True)
-
-  print("Pivoting to virtual environment...")
-  # Replace current process with the venv python process
-  # sys.argv[0] is the script name, sys.argv[1:] are the flags
-  os.execv(str(python_bin), [str(python_bin)] + sys.argv)
-
-
-def pivot_to_fresh_venv(project_root: Path):
-  venv_dir = project_root / ".venv"
-  python_bin = venv_dir / ("Scripts" if os.name == "nt" else "bin") / "python"
-
-  # Critical: Check if we are in the venv we are about to delete!
-  if sys.prefix == str(venv_dir):
-    return
-
-  if venv_dir.exists():
-    print("Nuking existing venv for a fresh start...")
-    shutil.rmtree(venv_dir)
-
-  print("Provisioning fresh hermetic venv...")
-  venv.create(venv_dir, with_pip=True)
-
-  # Re-execute
-  os.execv(str(python_bin), [str(python_bin)] + sys.argv)
-# END
-
-################################################################################
-
-
-# BEGIN ###
-def synthesize_infra_list(destination: Path):
-    """Ensures the environment definitions exist on disk."""
-    destination.mkdir(exist_ok=True)
-
-    container_list = [
-        "FROM ghcr.io/void-linux/void-glibc-busybox",
-        "RUN xbps-install -Su -y && xbps-install -y python3 python3-pip",
-        "ENV PYTHONDONTWRITEBYTECODE=1",
-        "ENV PIP_BREAK_SYSTEM_PACKAGES=1",
-        "WORKDIR /app"
-    ]
-
-    compose_list = [
-        "services:",
-        "  primary:",
-        "    build:",
-        "      context: ${PROJECT_ROOT}",
-        "      dockerfile: infra/Containerfile",
-        "    container_name: primes_primary",
-        "    volumes:",
-        "      - ${PROJECT_ROOT}:/app:Z",
-        "    working_dir: /app",
-        "    environment:",
-        "      - PROJECT_ROOT=${PROJECT_ROOT}",
-        "    ports:",
-        "      - \"9200:9200\"",
-        "      - \"9201:9201\"",
-        "    command: [\"tail\", \"-f\", \"/dev/null\"]"
-    ]
-
-    c_file = destination / "Containerfile"
-    y_file = destination / "compose.yaml"
-
-    container_content = "\n".join(container_list[:5]) + "\n"
-
-    compose_content = "\n".join(compose_list[:14]) + "\n"
-
-    if not c_file.exists():
-        print(f"Synthesizing {c_file}...")
-        c_file.write_text(container_content)
-
-    if not y_file.exists():
-        print(f"Synthesizing {y_file}...")
-        y_file.write_text(compose_content)
-# END   ###
-
-# BEGIN ### find_relative_path
-def find_relative_path(filename: str, inventory_dict: dict, root: Path) -> str:
-    """Finds a file in the inventory and returns its path relative to root."""
-    for path in inventory_dict.values():
-        if path.name == filename:
-            # .relative_to(root) turns '/home/user/repo/tests/test.py' into 'tests/test.py'
-            return str(path.relative_to(root));
-    raise FileNotFoundError(f"Could not find {filename} in project inventory.");
-
 
 def find_relative_path(filename, inventory_dict, root):
   """Finds a file in the inventory and returns its path relative to root."""
   # Ensure root is absolute for consistent relative path calculation
   root_abs = os.path.abspath(root)
-
   for path in inventory_dict.values():
     if os.path.basename(path) == filename:
       return os.path.relpath(path, root_abs)
-
   raise FileNotFoundError(f"Could not find {filename} in project inventory.")
-# END   ###
+# END
 
-# BEGIN
 def find_dir_in_inventory(targ_dir, inventory):
   for level in inventory:
     for path in level:
       if os.path.isdir(path) and os.path.basename(path) == targ_dir:
         return path
   return None
+# END
 
 def mass_dir_to_sys_path(inventory):
   for level in inventory:
@@ -332,6 +180,7 @@ def mass_dir_to_sys_path(inventory):
         print(f"\nAdding \n{path}\n{str(path)}\n to sys.path\n")
         sys.path.insert(0, str(path))
   return None
+# END
 
 def focused_dir_to_sys_path(inventory):
   for level in inventory:
@@ -340,29 +189,6 @@ def focused_dir_to_sys_path(inventory):
         if str(path) not in sys.path:
           sys.path.insert(0, str(path))
   return None
-# END
-
-# BEGIN
-
-def env_make(root, inventory):
-  # Collect all directory paths from the nested list structure
-  # os.path.isdir() replaces p.is_dir()
-  # str(p) is redundant as p is already a string in the new inventory
-  dir_list = [p for level in inventory for p in level if os.path.isdir(p)]
-
-  # os.pathsep (':' on Unix, ';' on Windows) replaces the hardcoded ":"
-  extra_paths = os.pathsep.join(dir_list)
-
-  env = os.environ.copy()
-
-  # Prepend the new paths to the existing PYTHONPATH if it exists
-  current_pythonpath = env.get("PYTHONPATH", "")
-  if current_pythonpath:
-    env["PYTHONPATH"] = f"{extra_paths}{os.pathsep}{current_pythonpath}"
-  else:
-    env["PYTHONPATH"] = extra_paths
-
-  return env
 # END
 
 def env_make_with_venv_path(root, inventory):
@@ -390,60 +216,71 @@ def env_make_with_venv_path(root, inventory):
         env["PYTHONPATH"] = extra_python_paths
 
     return env
+# END
 
-def create_isolated_sandbox(src="/app_host", dst="/app_sandbox"):
-  if os.path.exists(dst):
-    shutil.rmtree(dst) # Clear old runs
-
-  # copytree replicates the whole directory tree
-  shutil.copytree(src, dst, symlinks=True, ignore=shutil.ignore_patterns('.git', '__pycache__'))
-
-  # Now switch the working directory to the sandbox
-  os.chdir(dst)
-  print(f"Sandbox created and active at: {dst}")
 
 ################################################################################
 
-# BEGIN Spawn Service (simple)
+# BEGIN Updated Spawn Service (detects compose method)
+def get_compose_command():
+    """Returns 'podman-compose', 'docker-compose', or 'docker compose'."""
+    # 1. Check for podman-compose
+    if shutil.which("podman-compose"):
+        return ["podman-compose"]
+
+    # 2. Check for modern docker compose (the plugin)
+    # We check 'docker' first, then see if 'compose' works
+    if shutil.which("docker"):
+        try:
+            result = subprocess.run(["docker", "compose", "version"],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                return ["docker", "compose"]
+        except Exception:
+            pass
+
+    # 3. Check for the old docker-compose standalone
+    if shutil.which("docker-compose"):
+        return ["docker-compose"]
+
+    raise RuntimeError("Neither podman-compose nor docker-compose were found.")
+
+# Updated Spawn Service
 def spawn_service(root, compose_path, pod_name, service_name, count):
+"""Requires service name to match profile name"""
+    cmd_base = get_compose_command() # Detect command
 
-  up_cmd = [
-    "podman-compose",
-    "--profile", service_name,
-    "-f", compose_path,
-    "-p", pod_name,
-    "up", "-d", "--build",
-    "--scale", f"{service_name}={count}",
-  ]
+    up_cmd = cmd_base + [
+        "--profile", service_name,
+        "-f", compose_path,
+        "-p", pod_name,
+        "up", "-d", "--build",
+        "--scale", f"{service_name}={count}",
+    ]
 
-  print(f"Executing: {' '.join(up_cmd)} at {root}")
+    print(f"Executing: {' '.join(up_cmd)} at {root}")
+    subprocess.run(up_cmd, cwd=root, check=True)
 
-  subprocess.run(up_cmd, cwd=root, check=True)
-# END
-
-# BEGIN Spawn Service (complex)
+# Updated Spawn Service (complex)
 def spawn_service_complex(root, compose_path, pod_name, service_name, profiles=None, count=1):
-  """spawn_service_complex(root, relative_compose_path, SNAKE_PIT, "isolated", ["isolated"] 1) """
+"""Service name doesn't have to match profile name"""
+    up_cmd = get_compose_command()     # Detect command
 
-  # Initialize the command base
-  up_cmd = ["podman-compose"]
+    if profiles:
+        for profile in profiles:
+            up_cmd.extend(["--profile", profile])
 
-  # Add profiles if provided (e.g., ["workers_only"])
-  if profiles:
-    for profile in profiles:
-      up_cmd.extend(["--profile", profile])
+    up_cmd.extend([
+        "-f", compose_path,
+        "-p", pod_name,
+        "up", "-d", "--build",
+        "--scale", f"{service_name}={count}",
+    ])
 
-  # Add the rest of the standard arguments
-  up_cmd.extend([
-    "-f", compose_path, # Path relative to 'root'
-    "-p", pod_name,
-    "up", "-d", "--build",
-    "--scale", f"{service_name}={count}",
-  ])
+    print(f"Executing: {' '.join(up_cmd)} at {root}")
+    subprocess.run(up_cmd, cwd=root, check=True)
+# END   Updated Spawn Service
 
-  print(f"Executing: {' '.join(up_cmd)} at {root}")
-  subprocess.run(up_cmd, cwd=root, check=True)
-# END
 
 ################################################################################
 
@@ -494,30 +331,23 @@ def driver(venv_dir, package_name):
 
 ################################################################################
 
-def dry_run(root): # BEGIN ###
+def dry_run(root):
   print("Running in Dry-Run mode...")
   inventory = _reflexive_inventory(root)
   logs_dir = find_dir_in_inventory("logs", inventory)
   log_inventory(root, inventory, logs_dir)
   print(f"Inventory dry ran and logged to {logs_dir}/inventory.log")
   print("No container actions performed.")
-# END ###
+# END
 
-def run_all_tests(root): # BEGIN ###
+def run_all_tests(root):
 
-  ensure_venv(".auto_venv")
-
-# # BEGIN dealing with PATH
-#   venv_bin = os.path.abspath(os.path.join(root, ".auto_venv", "bin"))
-#   os.environ["PATH"] = venv_bin + os.pathsep + os.environ.get("PATH", "")
-# # END
-
+  if os.environ.get("IS_BOOTSTRAPPED"):
+    pass
+  else: ensure_venv(".auto_venv")
 
   inventory = _reflexive_inventory(root)
   file_map = get_terminal_leaves(inventory)
-
-  logs_dir = find_dir_in_inventory("logs", inventory)
-  # log_inventory(root, inventory, logs_dir)
 
   req_filename = "requirements.txt"
   relative_req_path = find_relative_path(req_filename, file_map, root)
@@ -525,9 +355,7 @@ def run_all_tests(root): # BEGIN ###
   suite_filename = "integration-suite.py"
   relative_suite_path = find_relative_path(suite_filename, file_map, root)
 
-  # env = env_make(root, inventory)
   env = env_make_with_venv_path(root, inventory)
-
 
   result1 = subprocess.run(
     [sys.executable, "-m", "pip", "install", "-r", relative_req_path],
@@ -541,39 +369,9 @@ def run_all_tests(root): # BEGIN ###
   )
 
   return True
-# END ###
+# END
 
 ################################################################################
-
-def known_commands():
-  SNAKE_PIT = False # placeholder
-  TARGET = False # placeholder
-  FLAG = False # placeholder
-  relative_compose_path = False # placeholder
-  relative_suite_path  = False # placeholder
-
-  cmd_spin_primary = [
-    "podman-compose",
-    "-f", relative_compose_path,
-    "-p", f"{SNAKE_PIT}",
-    "up", "-d", "--build",
-    "primary"
-  ] #cwd=root, check=true
-  c2 = [
-    "podman", "exec", "-i", f"{TARGET}",
-    "python3", "-", f"{FLAG}"  # The '-' tells Python to read from stdin
-  ] # text=true, check=true, input=(thing not here)
-  c3 = [
-    "podman", "exec",
-    "-w", "/app",        # Ensure we are in the project root
-    f"{SNAKE_PIT}",
-    "python3", relative_suite_path
-  ] # check=true
-
-  # not totally sure how to turn into commands like above
-  print("Run nodes via: podman exec -it snake_pit python3 core/primary_node.py")
-
-  return True
 
 def bootstrap_with_source_capture():
   # 1. Identify the file containing this specific function
@@ -599,10 +397,12 @@ def bootstrap_with_source_capture():
   # You can now use this variable to hash the script,
   # send it to a container, or verify its own integrity.
   return captured_source
+# END
 
-def spoon_feed_to_service_type(service_name, source, args): # BEGIN
+def spoon_feed_to_service_type(service_name, source, args):
+
   cmd = [
-    "podman", "ps", "--format", "{{.Names}}",
+    f"{CONTAINER_ENGINE}", "ps", "--format", "{{.Names}}",
     "--filter", f"label=io.podman.compose.service={service_name}"
   ]
   container_names = subprocess.check_output(cmd, text=True).splitlines()
@@ -611,8 +411,8 @@ def spoon_feed_to_service_type(service_name, source, args): # BEGIN
     print(f"[1] Teleporting to {name}...")
 
     exec_cmd = [
-      "podman", "exec", "-i", f"{name}",
-      "python3", "-", f"{args}"  # The '-' tells Python to read from stdin
+      f"{CONTAINER_ENGINE}", "exec", "-i",
+      f"{name}", "python3", "-", f"{args}"
     ]
 
     result = subprocess.run(
@@ -623,36 +423,16 @@ def spoon_feed_to_service_type(service_name, source, args): # BEGIN
     )
 # END
 
-def broadcast_source(targets, flag): # BEGIN
-  """
-  targets: can be a single string 'snake_pit' or a list ['worker_1', 'worker_2']
-  """
-  source = bootstrap_with_source_capture()
-
-  # Normalize targets to a list
-  if isinstance(targets, str):
-    # If it's a service name, find its children, otherwise assume it's one container
-    targets = [targets]
-
-  for target in targets:
-    exec_cmd = ["podman", "exec", "-i", target, "python3", "-", flag]
-    subprocess.run(exec_cmd, input=source, text=True, check=True)
-# END
-
 ################################################################################
 
-def spin_podman_up(root, worker_count: int): # BEGIN ###
-  """RIP: 'dig_snake_pit()' """
+def spin_podman_up(root, worker_count: int):
   inventory = _reflexive_inventory(root)
   file_map = get_terminal_leaves(inventory)
-
 
   core_dir  = find_dir_in_inventory("core",  inventory)
   infra_dir = find_dir_in_inventory("infra", inventory)
   tests_dir = find_dir_in_inventory("tests", inventory)
   logs_dir  = find_dir_in_inventory("logs",  inventory)
-
-  # log_inventory(root, inventory, logs_dir)
 
   # BEGIN root relative
   compose_filename = "compose.yaml"
@@ -667,9 +447,7 @@ def spin_podman_up(root, worker_count: int): # BEGIN ###
 
   print(f"--- Starting Hermetic Environment [Reflexive Mode] ---")
 
-
-  # BEGIN pod spinning logic
-  try:
+  try:   # BEGIN pod spinning logic
     SNAKE_PIT = "snake_pit"
     SOURCE = bootstrap_with_source_capture()
     active = (0, 1, 0, 0, 1, 0, 0, 0, 0)
@@ -695,18 +473,18 @@ def spin_podman_up(root, worker_count: int): # BEGIN ###
   print(f"Inventory logged to: {root}/inventory.log")
 
 
-# END ###
+# END
 
 ################################################################################
 
-if __name__ == "__main__": # BEGIN
+if __name__ == "__main__":
   parser = argparse.ArgumentParser(description="Hermetic Environment Bootstrapper")
   parser.add_argument(
     "--here",
     action="store_true",
     help="Set activation directory as project root")
   parser.add_argument(
-    "--dry-run",
+    "--log-inventory",
     action="store_true",
     help="Build and log the project inventory without starting containers.")
   parser.add_argument(
@@ -725,21 +503,22 @@ if __name__ == "__main__": # BEGIN
 
   args = parser.parse_args()
 
-
+  CONTAINER_ENGINE = get_engine()
+  print(f"Get Engine Result: {CONTAINER_ENGINE}")
 
   if args.here:
     PROJECT_ROOT = Path.cwd()
   else:
     PROJECT_ROOT = get_project_root(BootConfig())
 
-  match (args.dry_run, args.run_all, args.container):
-    case (True, _, _):
-      dry_run(PROJECT_ROOT)
-    case (_, True, _):
+  if args.log_inventory:
+    dry_run(PROJECT_ROOT)
+
+  match (args.run_all, args.container):
+    case (True, _):
       run_all_tests(PROJECT_ROOT)
-    case (_, _,True):
+    case (_,True):
       spin_podman_up(PROJECT_ROOT, args.workers)
+# END
 
-
-# END                          ###
 ################################################################################

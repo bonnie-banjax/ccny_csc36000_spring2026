@@ -27,11 +27,6 @@ def get_free_port() -> int:
         return s.getsockname()[1]
 # END
 
-# def _grpc_compute(target: str, request: primes_pb2.ComputeRequest) -> primes_pb2.ComputeResponse:
-#     """A clean, sympathetic network call. No dictionary translation."""
-#     with grpc.insecure_channel(target) as channel:
-#         stub = primes_pb2_grpc.CoordinatorServiceStub(channel)
-#         return stub.Compute(request, timeout=3600)
 
 #  BEGIN
 def build_compute_request(args: argparse.Namespace) -> primes_pb2.ComputeRequest:
@@ -39,9 +34,6 @@ def build_compute_request(args: argparse.Namespace) -> primes_pb2.ComputeRequest
     Pure transformation: Namespace -> Protobuf Message.
     Zero side effects. Zero networking.
     """
-    # Map string choices to Protobuf Enum values
-    # Assuming your .proto defines Mode { COUNT=0; LIST=1; }
-    # and Exec { SINGLE=0; THREADS=1; PROCESSES=2; }
 
     mode_map = {"count": 0, "list": 1}
     exec_map = {"single": 0, "threads": 1, "processes": 2}
@@ -88,7 +80,7 @@ def execute_ephemeral_work(args: argparse.Namespace):
         "--port", str(worker_port),
         "--node-id", "Ephemeral-Worker",
         "--coordinator", ""
-]
+    ]
 
     print(f"[@] Launching ephemeral worker on {worker_addr}...")
 
@@ -118,40 +110,18 @@ def execute_ephemeral_work(args: argparse.Namespace):
         if retry_count == 50:
             raise RuntimeError("Ephemeral worker failed to start in time.")
 
-        # --- Work Execution ---
-        # Map the CLI arguments to the ComputeRequest
         stub = primes_pb2_grpc.WorkerServiceStub(channel)
 
-        # BEGIN taken from above
-        # mode_map = {"count": 0, "list": 1}
-        # exec_map = {"single": 0, "threads": 1, "processes": 2}
-        # return primes_pb2.ComputeRequest(
-        #     low=args.low,
-        #     high=args.high,
-        #     mode=mode_map.get(args.mode, 0),
-        #     chunk=args.chunk,
-        #     secondary_exec=exec_map.get(args.secondary_exec, 2),
-        #     secondary_workers=args.secondary_workers or 0,
-        #     max_return_primes=args.max_return_primes,
-        #     include_per_node=args.include_per_node
-        # )
-        # END
-
-        # BEGIN what was generated
         mode_map = {"count": 0, "list": 1}
         exec_map = {"single": 0, "threads": 1, "processes": 2}
-        # Note: We call ComputeRange because that is the method
-        # the Secondary Node's WorkerService exposes.
         request = primes_pb2.ComputeRequest(
             low=args.low,
             high=args.high,
             mode=mode_map.get(args.mode, 0),
             chunk=args.chunk,
-            secondary_exec=primes_pb2.THREADS, # Or map from args.exec
-            # secondary_exec=exec_map.get(args.secondary_exec, 2),
+            secondary_exec=exec_map.get(args.secondary_exec, 2),
             max_return_primes=args.max_return_primes
         )
-        # END
 
         response = stub.ComputeRange(request)
         return response
