@@ -11,25 +11,26 @@ from setuptools.command.develop import develop as _develop
 
 ROOT = Path(__file__).resolve().parent
 PROTO_DIR = ROOT / "protos"
-PROTO = PROTO_DIR / "direct_client.proto"
 
 
 def compile_protos() -> None:
-    """Generate *_pb2.py and *_pb2_grpc.py from protos/direct_client.proto."""
-    if not PROTO.exists():
-        raise FileNotFoundError(f"Missing proto file: {PROTO}")
+    """Generate *_pb2.py and *_pb2_grpc.py for every .proto in protos/."""
+    protos = sorted(PROTO_DIR.glob("*.proto"))
+    if not protos:
+        raise FileNotFoundError(f"No .proto files found in {PROTO_DIR}")
 
-    cmd = [
-        sys.executable,
-        "-m",
-        "grpc_tools.protoc",
-        "-I",
-        str(PROTO_DIR),
-        "--python_out=.",
-        "--grpc_python_out=.",
-        str(PROTO),
-    ]
-    subprocess.check_call(cmd, cwd=str(ROOT))
+    for proto in protos:
+        cmd = [
+            sys.executable,
+            "-m",
+            "grpc_tools.protoc",
+            "-I",
+            str(PROTO_DIR),
+            "--python_out=.",
+            "--grpc_python_out=.",
+            str(proto),
+        ]
+        subprocess.check_call(cmd, cwd=str(ROOT))
 
 
 class build_py(_build_py):
@@ -51,6 +52,10 @@ setup(
     py_modules=[
         "direct_client_pb2",
         "direct_client_pb2_grpc",
+        "direct_gateway_pb2",
+        "direct_gateway_pb2_grpc",
+        "replica_admin_pb2",
+        "replica_admin_pb2_grpc",
         "direct_client",
     ],
     cmdclass={"build_py": build_py, "develop": develop},

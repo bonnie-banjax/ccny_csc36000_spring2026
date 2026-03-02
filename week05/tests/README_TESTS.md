@@ -8,5 +8,5 @@ They assume you provide:
 and that you implement the gRPC APIs in protos/.
 
 Run:
-  pip install -r requirements-test.txt
+  pip install -r requirements.txt
   pytest -q

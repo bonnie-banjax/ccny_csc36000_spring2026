@@ -48,7 +48,7 @@ def _compile_protos():
             f"Command: {' '.join(cmd)}\n"
             f"stdout:\n{proc.stdout}\n"
             f"stderr:\n{proc.stderr}\n"
-            "Make sure you installed test requirements: pip install -r requirements-test.txt"
+            "Make sure you installed requirements: pip install -r requirements.txt"
         )
     if str(GEN_DIR) not in sys.path:
         sys.path.insert(0, str(GEN_DIR))

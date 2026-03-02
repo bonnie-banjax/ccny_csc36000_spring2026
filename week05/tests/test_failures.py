@@ -21,7 +21,6 @@ def test_follower_failure_and_recovery(cluster, gateway_stub):
     replica_addrs = [r["addr"] for r in data["replicas"]]
 
     st = get_replica_statuses(replica_addrs)
-    leader_addr, leader_status = [(a, s) for (a, s) in st if s.role == 2][0]
     follower_ids = [s.id for (_, s) in st if s.role != 2]
     victim = follower_ids[0]
 
@@ -75,7 +74,7 @@ def test_leader_failure(cluster, gateway_stub):
     replica_addrs = [r["addr"] for r in data["replicas"]]
 
     st = get_replica_statuses(replica_addrs)
-    leader_addr, leader_status = [(a, s) for (a, s) in st if s.role == 2][0]
+    _, leader_status = [(a, s) for (a, s) in st if s.role == 2][0]
     leader_id = leader_status.id
 
     alice = f"alice-{uuid.uuid4().hex[:8]}"
@@ -83,7 +82,7 @@ def test_leader_failure(cluster, gateway_stub):
     _send_some(gw, direct_pb2, alice, bob, n=5, prefix="before-leader-crash")
 
     stop_replica(leader_id)
-    new_leader_addr, new_leader_status = wait_for_leader(replica_addrs, timeout=25.0)
+    wait_for_leader(replica_addrs, timeout=25.0)
 
     _send_some(gw, direct_pb2, alice, bob, n=5, prefix="after-leader-crash")
 
@@ -109,7 +108,7 @@ def test_candidate_failure(cluster, gateway_stub):
     replica_addrs = [r["addr"] for r in data["replicas"]]
 
     st = get_replica_statuses(replica_addrs)
-    leader_addr, leader_status = [(a, s) for (a, s) in st if s.role == 2][0]
+    _, leader_status = [(a, s) for (a, s) in st if s.role == 2][0]
     leader_id = leader_status.id
 
     stop_replica(leader_id)
@@ -127,5 +126,5 @@ def test_candidate_failure(cluster, gateway_stub):
     assert candidate_id is not None, "No candidate observed during election; cannot validate candidate-failure handling."
     stop_replica(candidate_id)
 
-    new_leader_addr, new_leader_status = wait_for_leader(replica_addrs, timeout=30.0)
+    _, new_leader_status = wait_for_leader(replica_addrs, timeout=30.0)
     assert new_leader_status.id not in (leader_id, candidate_id), "Leader must be elected despite candidate crash."

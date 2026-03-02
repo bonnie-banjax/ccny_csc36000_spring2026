@@ -152,16 +152,20 @@ bash scripts/run_cluster.sh
 By default, the Gateway should listen on `127.0.0.1:50051` and replicas on `127.0.0.1:50061-50065`.
 
 ### 2) Install client deps + generate gRPC stubs for the client
-The provided `direct_client.py` imports `direct_client_pb2` and `direct_client_pb2_grpc`, so you must generate them from `protos/direct_client.proto` first.
+The provided code uses multiple generated stubs, so generate Python stubs for all `.proto` files in `protos/`.
 
 ```bash
-python -m pip install grpcio grpcio-tools protobuf
-python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. protos/direct_client.proto
+python -m pip install -r requirements.txt
+for f in protos/*.proto; do python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. "$f"; done
 ```
 
-You should now have:
+You should now have generated files including:
 - `direct_client_pb2.py`
 - `direct_client_pb2_grpc.py`
+- `direct_gateway_pb2.py`
+- `direct_gateway_pb2_grpc.py`
+- `replica_admin_pb2.py`
+- `replica_admin_pb2_grpc.py`
 
 ### 3) Run two clients (two terminals)
 
@@ -207,7 +211,7 @@ Then reply in **Terminal B**:
 Create and activate a venv, then:
 
 ```bash
-pip install -r requirements-test.txt
+pip install -r requirements.txt
 ```
 
 ### Run
