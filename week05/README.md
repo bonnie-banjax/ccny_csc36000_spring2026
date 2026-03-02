@@ -24,6 +24,10 @@ You must implement:
 2. **Gateway** (single instance)  
 3. **Scripts** required by the test suite (see below)
 
+Implementation files:
+- Implement replica node logic in `replica_admin.py`.
+- Implement gateway logic in `direct_gateway.py`.
+
 ---
 
 ## Non-goals (keep it simple)
@@ -93,6 +97,10 @@ You must implement the gRPC services exactly as defined in:
 Your Gateway must implement `direct.DirectGateway`.  
 Each replica must implement `replica.ReplicaAdmin`.
 
+Where to implement:
+- `direct_gateway.py` should host the `direct.DirectGateway` server.
+- `replica_admin.py` should host the `replica.ReplicaAdmin` server.
+
 > The tests compile these `.proto` files to create clients.
 
 ---
@@ -100,23 +108,23 @@ Each replica must implement `replica.ReplicaAdmin`.
 ## Required scripts (used by tests)
 Create these scripts in `scripts/` at the repository root:
 
-1) `scripts/run_cluster.sh`
+1) `scripts/run_cluster.py`
 - Starts **5 replicas** and **1 gateway** in the background
 - Creates/overwrites `.runtime/cluster.json` with PIDs and addresses (schema below)
 - Must return exit code 0 on success
 
-2) `scripts/stop_cluster.sh`
-- Stops all processes started by `run_cluster.sh` (best-effort)
+2) `scripts/stop_cluster.py`
+- Stops all processes started by `run_cluster.py` (best-effort)
 - Must return exit code 0 even if some processes are already stopped
 
-3) `scripts/start_replica.sh <replica_id>`
-- Starts a single replica `<replica_id>` (1–5) and updates `.runtime/cluster.json` PID for that replica
+3) `scripts/start_replica.py <replica_id>`
+- Starts a single replica `<replica_id>` (=> 1) and updates `.runtime/cluster.json` PID for that replica
 
-4) `scripts/stop_replica.sh <replica_id>`
+4) `scripts/stop_replica.py <replica_id>`
 - Stops a single replica `<replica_id>` and updates `.runtime/cluster.json` PID to `null` for that replica
 
 ### `.runtime/cluster.json` schema (required)
-`run_cluster.sh` must write:
+`run_cluster.py` must write:
 
 ```json
 {
@@ -146,7 +154,7 @@ This section is for a quick **human demo** that direct messages can be written a
 From your repo root:
 
 ```bash
-bash scripts/run_cluster.sh
+python scripts/run_cluster.py
 ```
 
 By default, the Gateway should listen on `127.0.0.1:50051` and replicas on `127.0.0.1:50061-50065`.
@@ -222,7 +230,7 @@ pytest -q
 ```
 
 The tests will:
-- call `scripts/run_cluster.sh`
+- call `scripts/run_cluster.py`
 - run gRPC calls against the Gateway and replicas
 - crash/restart replicas via scripts
 - validate ordering, elections, failure handling, and recovery catch-up

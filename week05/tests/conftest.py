@@ -21,10 +21,10 @@ def _run(cmd: List[str], cwd: Path, check: bool = True) -> subprocess.CompletedP
 
 def _ensure_scripts_exist():
     required = [
-        SCRIPTS_DIR / "run_cluster.sh",
-        SCRIPTS_DIR / "stop_cluster.sh",
-        SCRIPTS_DIR / "start_replica.sh",
-        SCRIPTS_DIR / "stop_replica.sh",
+        SCRIPTS_DIR / "run_cluster.py",
+        SCRIPTS_DIR / "stop_cluster.py",
+        SCRIPTS_DIR / "start_replica.py",
+        SCRIPTS_DIR / "stop_replica.py",
     ]
     missing = [p for p in required if not p.exists()]
     if missing:
@@ -60,7 +60,7 @@ def compiled_protos():
 
 def load_cluster() -> Dict[str, Any]:
     if not CLUSTER_JSON.exists():
-        pytest.fail(f"Expected {CLUSTER_JSON} to exist. Did scripts/run_cluster.sh create it?")
+        pytest.fail(f"Expected {CLUSTER_JSON} to exist. Did scripts/run_cluster.py create it?")
     return json.loads(CLUSTER_JSON.read_text())
 
 def wait_for_port(addr: str, timeout: float = 10.0):
@@ -111,9 +111,9 @@ def cluster():
     _ensure_scripts_exist()
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
-    proc = _run(["bash", str(SCRIPTS_DIR / "run_cluster.sh")], cwd=ROOT, check=False)
+    proc = _run([sys.executable, str(SCRIPTS_DIR / "run_cluster.py")], cwd=ROOT, check=False)
     if proc.returncode != 0:
-        pytest.fail(f"run_cluster.sh failed.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+        pytest.fail(f"run_cluster.py failed.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
 
     wait_until(lambda: CLUSTER_JSON.exists(), timeout=10.0, interval=0.1, desc="cluster.json creation")
 
@@ -133,9 +133,9 @@ def cluster():
 
     yield data
 
-    proc2 = _run(["bash", str(SCRIPTS_DIR / "stop_cluster.sh")], cwd=ROOT, check=False)
+    proc2 = _run([sys.executable, str(SCRIPTS_DIR / "stop_cluster.py")], cwd=ROOT, check=False)
     if proc2.returncode != 0:
-        print(f"[teardown] stop_cluster.sh failed:\nstdout:\n{proc2.stdout}\nstderr:\n{proc2.stderr}", file=sys.stderr)
+        print(f"[teardown] stop_cluster.py failed:\nstdout:\n{proc2.stdout}\nstderr:\n{proc2.stderr}", file=sys.stderr)
 
 @pytest.fixture()
 def gateway_stub(cluster):
@@ -148,14 +148,14 @@ def ordered_users(u1: str, u2: str) -> Tuple[str, str]:
     return (u1, u2) if u1 <= u2 else (u2, u1)
 
 def stop_replica(replica_id: int):
-    proc = _run(["bash", str(SCRIPTS_DIR / "stop_replica.sh"), str(replica_id)], cwd=ROOT, check=False)
+    proc = _run([sys.executable, str(SCRIPTS_DIR / "stop_replica.py"), str(replica_id)], cwd=ROOT, check=False)
     if proc.returncode != 0:
-        pytest.fail(f"stop_replica.sh {replica_id} failed.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+        pytest.fail(f"stop_replica.py {replica_id} failed.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
 
 def start_replica(replica_id: int):
-    proc = _run(["bash", str(SCRIPTS_DIR / "start_replica.sh"), str(replica_id)], cwd=ROOT, check=False)
+    proc = _run([sys.executable, str(SCRIPTS_DIR / "start_replica.py"), str(replica_id)], cwd=ROOT, check=False)
     if proc.returncode != 0:
-        pytest.fail(f"start_replica.sh {replica_id} failed.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+        pytest.fail(f"start_replica.py {replica_id} failed.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
 
 def wait_for_leader(replica_addrs: List[str], timeout: float = 20.0):
     def _leader():

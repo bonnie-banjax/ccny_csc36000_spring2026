@@ -1,10 +1,10 @@
 These tests are black-box.
 
 They assume you provide:
-- scripts/run_cluster.sh
-- scripts/stop_cluster.sh
-- scripts/start_replica.sh <id>
-- scripts/stop_replica.sh <id>
+- scripts/run_cluster.py
+- scripts/stop_cluster.py
+- scripts/start_replica.py <id>
+- scripts/stop_replica.py <id>
 and that you implement the gRPC APIs in protos/.
 
 Run:
