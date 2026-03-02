@@ -10,3 +10,6 @@ and that you implement the gRPC APIs in protos/.
 Run:
   pip install -r requirements.txt
   pytest -q
+
+See also:
+- `tests/RAFT_TEST_GAPS.md` for Raft properties that are not fully testable via the current black-box API surface.
