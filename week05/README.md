@@ -237,12 +237,19 @@ The tests will:
 
 ---
 
-## What the tests validate (minimum)
-- Messages are returned **in the order sent** (by `seq` and by content)
-- Leader election follows Raft rules (including **up-to-date log** voting)
-- Candidate / leader / follower crash scenarios converge correctly
-- After restart, a replica catches up and can serve reads again
-- Reads return `served_by` showing which replica(s) were used
+## What the tests validate
+- Messages are returned **in the order sent** (by `seq` and by content).
+- Retry behavior is idempotent for the same `(client_id, client_msg_id)`.
+- Exactly one leader is observed for a term (single-leader safety, observational check).
+- Leader remains stable in healthy periods (heartbeat/election stability check).
+- Leader election follows Raft voting rules, including the **up-to-date log** condition.
+- Candidate / leader / follower crash scenarios converge to a working leader.
+- If a quorum cannot be reached (majority down), client requests fail instead of falsely succeeding.
+- After restart, a follower catches up and can serve reads again.
+- Leader commit index is monotonic (does not move backward).
+- Reads return `served_by` showing which replica(s) handled the read.
+
+These tests are strong black-box checks, but they are not a full formal proof of every Raft invariant under all adversarial schedules. For known coverage limits and extension ideas, see `tests/RAFT_TEST_GAPS.md`.
 
 ---
 
