@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 import grpc
 
-import direct_client_pb2 as pb
-import direct_client_pb2_grpc as pb_grpc
+from generated import direct_client_pb2 as pb
+from generated import direct_client_pb2_grpc as pb_grpc
 
 
 @dataclass

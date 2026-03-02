@@ -11,6 +11,7 @@ from setuptools.command.develop import develop as _develop
 
 ROOT = Path(__file__).resolve().parent
 PROTO_DIR = ROOT / "protos"
+GEN_DIR = ROOT / "generated"
 
 
 def compile_protos() -> None:
@@ -18,6 +19,7 @@ def compile_protos() -> None:
     protos = sorted(PROTO_DIR.glob("*.proto"))
     if not protos:
         raise FileNotFoundError(f"No .proto files found in {PROTO_DIR}")
+    GEN_DIR.mkdir(parents=True, exist_ok=True)
 
     for proto in protos:
         cmd = [
@@ -26,8 +28,8 @@ def compile_protos() -> None:
             "grpc_tools.protoc",
             "-I",
             str(PROTO_DIR),
-            "--python_out=.",
-            "--grpc_python_out=.",
+            f"--python_out={GEN_DIR}",
+            f"--grpc_python_out={GEN_DIR}",
             str(proto),
         ]
         subprocess.check_call(cmd, cwd=str(ROOT))
@@ -49,15 +51,8 @@ setup(
     name="direct-chat",
     version="0.1.0",
     description="Direct (1:1) chat client + gateway protos",
-    py_modules=[
-        "direct_client_pb2",
-        "direct_client_pb2_grpc",
-        "direct_gateway_pb2",
-        "direct_gateway_pb2_grpc",
-        "replica_admin_pb2",
-        "replica_admin_pb2_grpc",
-        "direct_client",
-    ],
+    packages=["generated"],
+    py_modules=["direct_client"],
     cmdclass={"build_py": build_py, "develop": develop},
     install_requires=[
         "grpcio>=1.60.0",

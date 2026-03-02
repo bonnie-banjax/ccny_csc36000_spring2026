@@ -22,7 +22,7 @@ You must implement:
 
 1. **Raft Replica Node** (run **5** instances by default)  
 2. **Gateway** (single instance)  
-3. **Scripts** required by the test suite (see below)
+3. Use the provided **cluster scripts** (see below) and keep their behavior compatible with the test contract
 
 Implementation files:
 - Implement replica node logic in `replica_admin.py`.
@@ -106,7 +106,8 @@ Where to implement:
 ---
 
 ## Required scripts (used by tests)
-Create these scripts in `scripts/` at the repository root:
+These scripts are already provided in `scripts/` at the repository root.
+Keep these entry points and contracts unchanged:
 
 1) `scripts/run_cluster.py`
 - Starts **5 replicas** and **1 gateway** in the background
@@ -118,7 +119,7 @@ Create these scripts in `scripts/` at the repository root:
 - Must return exit code 0 even if some processes are already stopped
 
 3) `scripts/start_replica.py <replica_id>`
-- Starts a single replica `<replica_id>` (=> 1) and updates `.runtime/cluster.json` PID for that replica
+- Starts a single replica `<replica_id>` (integer, `>= 1`) and updates `.runtime/cluster.json` PID for that replica
 
 4) `scripts/stop_replica.py <replica_id>`
 - Stops a single replica `<replica_id>` and updates `.runtime/cluster.json` PID to `null` for that replica
@@ -164,16 +165,16 @@ The provided code uses multiple generated stubs, so generate Python stubs for al
 
 ```bash
 python -m pip install -r requirements.txt
-for f in protos/*.proto; do python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. "$f"; done
+for f in protos/*.proto; do python -m grpc_tools.protoc -I protos --python_out=generated --grpc_python_out=generated "$f"; done
 ```
 
 You should now have generated files including:
-- `direct_client_pb2.py`
-- `direct_client_pb2_grpc.py`
-- `direct_gateway_pb2.py`
-- `direct_gateway_pb2_grpc.py`
-- `replica_admin_pb2.py`
-- `replica_admin_pb2_grpc.py`
+- `generated/direct_client_pb2.py`
+- `generated/direct_client_pb2_grpc.py`
+- `generated/direct_gateway_pb2.py`
+- `generated/direct_gateway_pb2_grpc.py`
+- `generated/replica_admin_pb2.py`
+- `generated/replica_admin_pb2_grpc.py`
 
 ### 3) Run two clients (two terminals)
 
