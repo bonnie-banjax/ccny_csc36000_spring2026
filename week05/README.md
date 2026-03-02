@@ -2,7 +2,7 @@
 
 ## Summary
 Your team will build a **Raft replicated log** (one Raft cluster) and a **simple gRPC Gateway** that clients use for **1:1 direct messaging**.  
-Everything must run on **one machine** using **host:port** addresses (default `127.0.0.1`), while remaining configurable to move processes to other hosts later.
+Everything must be able to run on **one machine** using **host:port** addresses (default `127.0.0.1`), while remaining configurable to move processes to other hosts later.
 
 **Storage is in-memory only.** (No databases, no disk persistence.)
 
@@ -87,8 +87,8 @@ All addresses must remain configurable as `host:port`.
 
 ## Required gRPC APIs (contract used by tests)
 You must implement the gRPC services exactly as defined in:
-- `tests/protos/direct_gateway.proto` (Gateway API)
-- `tests/protos/replica_admin.proto` (Replica Status API used by tests)
+- `protos/direct_gateway.proto` (Gateway API)
+- `protos/replica_admin.proto` (Replica Status API used by tests)
 
 Your Gateway must implement `direct.DirectGateway`.  
 Each replica must implement `replica.ReplicaAdmin`.
@@ -152,16 +152,16 @@ bash scripts/run_cluster.sh
 By default, the Gateway should listen on `127.0.0.1:50051` and replicas on `127.0.0.1:50061-50065`.
 
 ### 2) Install client deps + generate gRPC stubs for the client
-The provided `direct_client.py` imports `direct_pb2` and `direct_pb2_grpc`, so you must generate them from `direct.proto` first.
+The provided `direct_client.py` imports `direct_client_pb2` and `direct_client_pb2_grpc`, so you must generate them from `protos/direct_client.proto` first.
 
 ```bash
 python -m pip install grpcio grpcio-tools protobuf
-python -m grpc_tools.protoc -I . --python_out=. --grpc_python_out=. direct.proto
+python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. protos/direct_client.proto
 ```
 
 You should now have:
-- `direct_pb2.py`
-- `direct_pb2_grpc.py`
+- `direct_client_pb2.py`
+- `direct_client_pb2_grpc.py`
 
 ### 3) Run two clients (two terminals)
 

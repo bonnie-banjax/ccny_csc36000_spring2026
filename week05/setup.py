@@ -10,11 +10,12 @@ from setuptools.command.develop import develop as _develop
 
 
 ROOT = Path(__file__).resolve().parent
-PROTO = ROOT / "direct.proto"
+PROTO_DIR = ROOT / "protos"
+PROTO = PROTO_DIR / "direct_client.proto"
 
 
 def compile_protos() -> None:
-    """Generate *_pb2.py and *_pb2_grpc.py from direct.proto."""
+    """Generate *_pb2.py and *_pb2_grpc.py from protos/direct_client.proto."""
     if not PROTO.exists():
         raise FileNotFoundError(f"Missing proto file: {PROTO}")
 
@@ -23,7 +24,7 @@ def compile_protos() -> None:
         "-m",
         "grpc_tools.protoc",
         "-I",
-        str(ROOT),
+        str(PROTO_DIR),
         "--python_out=.",
         "--grpc_python_out=.",
         str(PROTO),
@@ -48,8 +49,8 @@ setup(
     version="0.1.0",
     description="Direct (1:1) chat client + gateway protos",
     py_modules=[
-        "direct_pb2",
-        "direct_pb2_grpc",
+        "direct_client_pb2",
+        "direct_client_pb2_grpc",
         "direct_client",
     ],
     cmdclass={"build_py": build_py, "develop": develop},

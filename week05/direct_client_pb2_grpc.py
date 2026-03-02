@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import direct_pb2 as direct__pb2
+import direct_client_pb2 as direct__client__pb2
 
 GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in direct_pb2_grpc.py depends on'
+        + ' but the generated code in direct_client_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,18 +36,18 @@ class DirectGatewayStub(object):
         """
         self.SendDirect = channel.unary_unary(
                 '/direct.DirectGateway/SendDirect',
-                request_serializer=direct__pb2.SendDirectRequest.SerializeToString,
-                response_deserializer=direct__pb2.SendDirectResponse.FromString,
+                request_serializer=direct__client__pb2.SendDirectRequest.SerializeToString,
+                response_deserializer=direct__client__pb2.SendDirectResponse.FromString,
                 _registered_method=True)
         self.SubscribeConversation = channel.unary_stream(
                 '/direct.DirectGateway/SubscribeConversation',
-                request_serializer=direct__pb2.SubscribeConversationRequest.SerializeToString,
-                response_deserializer=direct__pb2.DirectEvent.FromString,
+                request_serializer=direct__client__pb2.SubscribeConversationRequest.SerializeToString,
+                response_deserializer=direct__client__pb2.DirectEvent.FromString,
                 _registered_method=True)
         self.GetConversationHistory = channel.unary_unary(
                 '/direct.DirectGateway/GetConversationHistory',
-                request_serializer=direct__pb2.GetConversationHistoryRequest.SerializeToString,
-                response_deserializer=direct__pb2.GetConversationHistoryResponse.FromString,
+                request_serializer=direct__client__pb2.GetConversationHistoryRequest.SerializeToString,
+                response_deserializer=direct__client__pb2.GetConversationHistoryResponse.FromString,
                 _registered_method=True)
 
 
@@ -81,18 +81,18 @@ def add_DirectGatewayServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'SendDirect': grpc.unary_unary_rpc_method_handler(
                     servicer.SendDirect,
-                    request_deserializer=direct__pb2.SendDirectRequest.FromString,
-                    response_serializer=direct__pb2.SendDirectResponse.SerializeToString,
+                    request_deserializer=direct__client__pb2.SendDirectRequest.FromString,
+                    response_serializer=direct__client__pb2.SendDirectResponse.SerializeToString,
             ),
             'SubscribeConversation': grpc.unary_stream_rpc_method_handler(
                     servicer.SubscribeConversation,
-                    request_deserializer=direct__pb2.SubscribeConversationRequest.FromString,
-                    response_serializer=direct__pb2.DirectEvent.SerializeToString,
+                    request_deserializer=direct__client__pb2.SubscribeConversationRequest.FromString,
+                    response_serializer=direct__client__pb2.DirectEvent.SerializeToString,
             ),
             'GetConversationHistory': grpc.unary_unary_rpc_method_handler(
                     servicer.GetConversationHistory,
-                    request_deserializer=direct__pb2.GetConversationHistoryRequest.FromString,
-                    response_serializer=direct__pb2.GetConversationHistoryResponse.SerializeToString,
+                    request_deserializer=direct__client__pb2.GetConversationHistoryRequest.FromString,
+                    response_serializer=direct__client__pb2.GetConversationHistoryResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -120,8 +120,8 @@ class DirectGateway(object):
             request,
             target,
             '/direct.DirectGateway/SendDirect',
-            direct__pb2.SendDirectRequest.SerializeToString,
-            direct__pb2.SendDirectResponse.FromString,
+            direct__client__pb2.SendDirectRequest.SerializeToString,
+            direct__client__pb2.SendDirectResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -147,8 +147,8 @@ class DirectGateway(object):
             request,
             target,
             '/direct.DirectGateway/SubscribeConversation',
-            direct__pb2.SubscribeConversationRequest.SerializeToString,
-            direct__pb2.DirectEvent.FromString,
+            direct__client__pb2.SubscribeConversationRequest.SerializeToString,
+            direct__client__pb2.DirectEvent.FromString,
             options,
             channel_credentials,
             insecure,
@@ -174,8 +174,8 @@ class DirectGateway(object):
             request,
             target,
             '/direct.DirectGateway/GetConversationHistory',
-            direct__pb2.GetConversationHistoryRequest.SerializeToString,
-            direct__pb2.GetConversationHistoryResponse.FromString,
+            direct__client__pb2.GetConversationHistoryRequest.SerializeToString,
+            direct__client__pb2.GetConversationHistoryResponse.FromString,
             options,
             channel_credentials,
             insecure,

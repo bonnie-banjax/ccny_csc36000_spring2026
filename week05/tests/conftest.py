@@ -13,7 +13,7 @@ RUNTIME_DIR = ROOT / ".runtime"
 CLUSTER_JSON = RUNTIME_DIR / "cluster.json"
 SCRIPTS_DIR = ROOT / "scripts"
 
-PROTO_DIR = Path(__file__).resolve().parent / "protos"
+PROTO_DIR = ROOT / "protos"
 GEN_DIR = RUNTIME_DIR / "_pb"
 
 def _run(cmd: List[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
