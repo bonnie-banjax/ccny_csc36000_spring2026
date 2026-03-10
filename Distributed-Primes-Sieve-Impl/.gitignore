@@ -54,3 +54,8 @@ auto_venv/
 
 # Python cache files
 __pycache__/
+
+
+# from inner .gitignore
+.runtime
+*.egg-info
