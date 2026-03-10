@@ -1,6 +1,9 @@
 
 # NOTE: this code is LLM synthesized and yet unreviewed
 
+import signal
+import sys
+
 import asyncio
 import time
 import grpc
@@ -68,14 +71,55 @@ class DirectGateway(pb_grpc.DirectGatewayServicer):
                 yield event
                 last_sent = event.seq
 
+async def ccl_thread(stop_event: asyncio.Event):
+    """Transplanted logic from direct_client.py to monitor stdin."""
+    print("[gateway] Console active. Type '/quit' or '/stop' to shut down.")
+    while not stop_event.is_set():
+        # This keeps the event loop responsive while waiting for user input
+        line = await asyncio.to_thread(sys.stdin.readline)
+        cmd = line.strip().lower()
+
+        if cmd in ("/quit", "/stop", "/exit"):
+            print("[gateway] Shutdown command received...")
+            stop_event.set()
+            break
+
+async def ccl_coroutine(stop_event: asyncio.Event, reader):
+    """Transplanted logic from direct_client.py to monitor stdin."""
+    print("[gateway] Console active. Type '/quit' or '/stop' to shut down.")
+    while not stop_event.is_set():
+        line = await reader.readline()
+        cmd = line.decode().strip().lower()
+        if cmd in ("/quit", "/stop", "/exit"):
+            print("[gateway] Shutdown command received...")
+            stop_event.set()
+            break
+
 async def serve():
+    stop_event = asyncio.Event()
     server = grpc.aio.server()
     pb_grpc.add_DirectGatewayServicer_to_server(DirectGateway(), server)
-    listen_addr = "[::]:50051"
-    server.add_insecure_port(listen_addr)
-    print(f"Gateway starting on {listen_addr}")
+    server.add_insecure_port("[::]:50051")
+
+    loop = asyncio.get_running_loop()
+    # loop.add_signal_handler(signal.SIGINT, stop_event.set)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+      loop.add_signal_handler(sig, stop_event.set)
+
     await server.start()
-    await server.wait_for_termination()
+
+    if sys.stdin.isatty():
+      reader = asyncio.StreamReader()
+      protocol = asyncio.StreamReaderProtocol(reader)
+      await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+      console_task = asyncio.create_task(ccl_coroutine(stop_event, reader))
+
+    await stop_event.wait() # await console_task revealed sys wasn't imported
+    print("[gateway] Closing active streams (5s grace)...")
+    await server.stop(5)
+    console_task.cancel()
+    print("[gateway] Offline.")
+
 
 if __name__ == "__main__":
     try:
