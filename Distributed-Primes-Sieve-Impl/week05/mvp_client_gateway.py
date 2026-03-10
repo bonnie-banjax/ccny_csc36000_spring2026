@@ -1,5 +1,5 @@
 
-# NOTE: this code is LLM synthesized and yet unreviewed
+# NOTE: this does not implement direct_gateway.proto
 
 import signal
 import sys
