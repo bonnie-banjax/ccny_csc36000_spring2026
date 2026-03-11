@@ -80,8 +80,24 @@ class DirectGatewayServicer(pb_grpc.DirectGatewayServicer):
     self.dedup_store = {}
     methods = [m for m in dir(self) if not m.startswith('_')]
     sys.stderr.write(f"[DEBUG] Servicer initialized with methods: {methods}\n")
+    self.current_leader_addr = None
+    self.current_leader_http_port = None
+    # Start a background task to keep this updated
+    asyncio.create_task(self._maintain_leader_cache())
 
-
+  async def _maintain_leader_cache(self): # BEGIN
+        """Background loop: Never blocks the main RPCs"""
+        while True:
+            try:
+                # Use a very short timeout so we don't hang
+                stub, addr = await asyncio.wait_for(self.get_leader(), timeout=2.0)
+                self.current_leader_addr = addr
+                self.current_leader_http_port = int(addr.split(':')[-1]) + 1000
+            except Exception:
+                # If discovery fails, keep the old one or set to None
+                pass
+            await asyncio.sleep(5) # Only check every 5 seconds
+  # END
   async def get_leader(self): # BEGIN async version
     for replica in self.replica_stubs:
       try:
@@ -144,7 +160,7 @@ class DirectGatewayServicer(pb_grpc.DirectGatewayServicer):
   #     return pb.SendDirectResponse(seq=seq, server_time_ms=int(time.time() * 1000))
   # # END
 
-  # async def SendDirect(self, request, context):
+  # async def SendDirect(self, request, context): # BEGIN
   #     key = (request.client_id, request.client_msg_id)
   #
   #     # 0. Deduplication check (now that self.dedup_store is fixed)
@@ -209,6 +225,8 @@ class DirectGatewayServicer(pb_grpc.DirectGatewayServicer):
   #         seq=999,
   #         server_time_ms=int(time.time() * 1000)
   #     )
+  # END
+
   async def SendDirect(self, request, context):
     sys.stderr.write(f"[DEBUG] SendDirect: {request.from_user} -> {request.to_user}\n")
 
@@ -257,78 +275,118 @@ class DirectGatewayServicer(pb_grpc.DirectGatewayServicer):
 # END
 
 # BEGIN
+  # async def SubscribeConversation(self, request, context):
+  #   sys.stderr.write(f"[DEBUG] Subscription started for {request.user_a} vs {request.user_b}\n")
+  #
+  #   # We start looking for messages after the sequence number the client provided
+  #   last_seen_seq = request.after_seq
+  #
+  #   try:
+  #       while True:
+  #           # 1. Find the leader to ask for data
+  #           sys.stderr.write("[DEBUG] Loop Tick - Looking for leader...\n")
+  #
+  #
+  #           leader_addr = self.current_leader_addr
+  #           port = self.current_leader_http_port
+  #           sys.stderr.write(f"[DEBUG] Loop Tick - Looking for leader...\n leader {leader_addr} & port {port} \n")
+  #           # leader_stub, leader_addr = await self.get_leader()
+  #           if not leader_addr:
+  #               sys.stderr.write("[DEBUG] No cached leader, skipping poll...\n")
+  #               await asyncio.sleep(1)
+  #               continue
+  #
+  #           # 2. Poll the replica's history/events endpoint
+  #           # Assuming your replica has an endpoint like /history or /events
+  #           http_port = int(leader_addr.split(':')[-1]) + 1000
+  #           url = f"http://127.0.0.1:{http_port}/read_history"
+  #
+  #           params = {
+  #               "user_a": request.user_a,
+  #               "user_b": request.user_b,
+  #               "after_seq": last_seen_seq,
+  #               "limit": 10
+  #           }
+  #
+  #           try:
+  #               response = await asyncio.to_thread(
+  #                   requests.get, url, params=params, timeout=2.0
+  #               )
+  #               if response.status_code == 200:
+  #                   data = response.json()
+  #                   events = data.get("events", [])
+  #                   sys.stderr.write(f"[DEBUG] Polled {url}, got {len(events)} events for {params['user_a']}\n")
+  #                   for event_data in events:
+  #                       # Convert the JSON/Dict into a Protobuf DirectEvent
+  #                       event = pb.DirectEvent(
+  #                           seq=int(event_data["seq"]),
+  #                           text=event_data["text"],
+  #                           from_user=event_data["from_user"],
+  #                           server_time_ms=int(event_data.get("server_time_ms", 0))
+  #                           # Add other fields as defined in your client.proto
+  #                       )
+  #                       yield event
+  #                       last_seen_seq = max(last_seen_seq, event.seq)
+  #
+  #           except Exception as e:
+  #               sys.stderr.write(f"[DEBUG] Poll error: {e}\n")
+  #
+  #           # 3. Wait a bit before polling again to avoid spamming
+  #           await asyncio.sleep(0.5)
+  #
+  #   except asyncio.CancelledError:
+  #       sys.stderr.write(f"[DEBUG] Subscription closed for {request.user_a}\n")
+ # END
   async def SubscribeConversation(self, request, context):
-    sys.stderr.write(f"[DEBUG] Subscription started for {request.user_a} vs {request.user_b}\n")
+    last_seq = request.after_seq
 
-    # We start looking for messages after the sequence number the client provided
-    last_seen_seq = request.after_seq
+    while True:
+        # 1. Non-blocking check of the cache
+        addr = self.current_leader_addr
+        port = self.current_leader_http_port
 
-    try:
-        while True:
-            # 1. Find the leader to ask for data
-            sys.stderr.write("[DEBUG] Loop Tick - Looking for leader...\n")
-            leader_stub, leader_addr = await self.get_leader()
-            if not leader_addr:
-                await asyncio.sleep(1)
-                continue
+        if not addr:
+            sys.stderr.write("[DEBUG] No cached leader, skipping poll...\n")
+            await asyncio.sleep(2)
+            continue
 
-            # 2. Poll the replica's history/events endpoint
-            # Assuming your replica has an endpoint like /history or /events
-            http_port = int(leader_addr.split(':')[-1]) + 1000
-            url = f"http://127.0.0.1:{http_port}/read_history"
-
-            params = {
+        # 2. Fire the request
+        try:
+            # Note: Using POST to be safe with body-data requirements
+            url = f"http://127.0.0.1:{port}/read_history"
+            payload = {
                 "user_a": request.user_a,
                 "user_b": request.user_b,
-                "after_seq": last_seen_seq,
-                "limit": 10
+                "after_seq": last_seq
             }
 
-            try:
-                response = await asyncio.to_thread(
-                    requests.get, url, params=params, timeout=2.0
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    events = data.get("events", [])
-                    sys.stderr.write(f"[DEBUG] Polled {url}, got {len(events)} events for {params['user_a']}\n")
-                    for event_data in events:
-                        # Convert the JSON/Dict into a Protobuf DirectEvent
-                        event = pb.DirectEvent(
-                            seq=int(event_data["seq"]),
-                            text=event_data["text"],
-                            from_user=event_data["from_user"],
-                            server_time_ms=int(event_data.get("server_time_ms", 0))
-                            # Add other fields as defined in your client.proto
-                        )
-                        yield event
-                        last_seen_seq = max(last_seen_seq, event.seq)
+            # Using a very aggressive timeout for the poll
+            response = await asyncio.to_thread(
+                requests.post, url, json=payload, timeout=1.5
+            )
 
-            except Exception as e:
-                sys.stderr.write(f"[DEBUG] Poll error: {e}\n")
+            if response.status_code == 200:
+                data = response.json()
+                for e_data in data.get("events", []):
+                    event = pb.DirectEvent(
+                        seq=int(e_data["seq"]),
+                        text=e_data["text"],
+                        from_user=e_data["from_user"]
+                    )
+                    yield event
+                    last_seq = max(last_seq, event.seq)
 
-            # 3. Wait a bit before polling again to avoid spamming
-            await asyncio.sleep(0.5)
+        except Exception as e:
+            # If the leader we cached just died, clear the cache
+            if "Connection" in str(e):
+                self.current_leader_addr = None
 
-    except asyncio.CancelledError:
-        sys.stderr.write(f"[DEBUG] Subscription closed for {request.user_a}\n")
- # END
+        await asyncio.sleep(1.0)
+
 # BEGIN fake async
   async def GetConversationHistory(self, request, context):
       print(f"[GATEWAY] Incoming GetConversationHistory from {request.user_a}")
       return pb.GetConversationHistoryResponse(events=[], served_by=["gate-1"])
-
-  # async def SubscribeConversation(self, request, context):
-  #     sys.stderr.write(f"[DEBUG] Subscription started for {request.user_a}\n")
-  #     # A dummy stream that just stays open so the client doesn't error out
-  #     try:
-  #         while True:
-  #             await asyncio.sleep(10)
-  #             # Yielding an empty event keeps the stream 'Alive'
-  #             yield pb.DirectEvent(text="Keep-alive heartbeat")
-  #     except asyncio.CancelledError:
-  #         sys.stderr.write("[DEBUG] Subscription cancelled by client\n")
-
 # END
 
 
