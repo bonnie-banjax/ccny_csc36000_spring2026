@@ -268,6 +268,7 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
     # -------------------------------------------------
     # Apply committed entries to chat state
     # -------------------------------------------------
+
     def _apply_committed_entries(self):
         # Only committed entries should affect reads.
         # This is where the Raft log turns into actual message history.
@@ -533,7 +534,7 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
             # Follower is behind or has conflicting suffix, so back up.
             self.next_index[peer] = max(1, self.next_index.get(peer, 1) - 1)
             return False
-
+# BEGIN
     def _replicate_until_committed(self, target_index, timeout=5.0):
         # Used when leader appends a new client message.
         # Keep trying replication until committed or timeout.
@@ -570,6 +571,7 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
             time.sleep(0.05)
 
         return False
+# END
 
     # -------------------------------------------------
     # Internal helpers for the gateway
@@ -630,15 +632,40 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
                 "duplicate": False,
             }
 
+    # def handle_read_history(self, data):
+    #     # Gateway can call this on a replica to read committed conversation history.
+    #     with self.lock:
+    #         user_a = str(data["user_a"])
+    #         user_b = str(data["user_b"])
+    #         after_seq = int(data.get("after_seq", 0))
+    #         limit = int(data.get("limit", 100))
+    #
+    #         conv = list(self.messages.get((user_a, user_b), []))
+    #         conv = [e for e in conv if int(e["seq"]) > after_seq]
+    #         conv = conv[-limit:]
+    #
+    #         return {
+    #             "ok": True,
+    #             "events": conv,
+    #             "served_by": [self.addr],
+    #             "commit_index": self.commit_index,
+    #             "role": self.role,
+    #             "leader_hint": self.leader_hint,
+    #         }
+
     def handle_read_history(self, data):
         # Gateway can call this on a replica to read committed conversation history.
         with self.lock:
-            user_a = str(data["user_a"])
-            user_b = str(data["user_b"])
+            u_a = str(data["user_a"])
+            u_b = str(data["user_b"])
+            # Sort them so (alice, bob) and (bob, alice) point to the same list
+            room_key = tuple(sorted([u_a, u_b]))
+
             after_seq = int(data.get("after_seq", 0))
+
             limit = int(data.get("limit", 100))
 
-            conv = list(self.messages.get((user_a, user_b), []))
+            conv = list(self.messages.get(room_key, []))
             conv = [e for e in conv if int(e["seq"]) > after_seq]
             conv = conv[-limit:]
 
@@ -658,7 +685,7 @@ class InternalHandler(BaseHTTPRequestHandler):
     node = None
 
     def log_message(self, fmt, *args):
-        # turned off noisy default HTTP logs.
+        # sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt%args))
         return
 
     def _read_json(self):
@@ -681,21 +708,31 @@ class InternalHandler(BaseHTTPRequestHandler):
 
         try:
             data = self._read_json()
+            print(f"DEBUG: Received {self.path} - Data: {data}")
 
             if self.path == "/request_vote":
                 self._send_json(self.node.handle_request_vote(data))
                 return
 
             if self.path == "/append_entries":
-                self._send_json(self.node.handle_append_entries(data))
+                # self._send_json(self.node.handle_append_entries(data))
+                resp = self.node.handle_append_entries(data)
+                print(f"DEBUG: append_entries response: {resp}")
+                self._send_json(resp)
                 return
 
             if self.path == "/client_append":
-                self._send_json(self.node.handle_client_append(data))
+                # self._send_json(self.node.handle_client_append(data))
+                resp = self.node.handle_client_append(data)
+                print(f"DEBUG: client_append response: {resp}")
+                self._send_json(resp)
                 return
 
             if self.path == "/read_history":
-                self._send_json(self.node.handle_read_history(data))
+                # self._send_json(self.node.handle_read_history(data))
+                resp = self.node.handle_read_history(data)
+                print(f"DEBUG: read_history response: {resp}")
+                self._send_json(resp)
                 return
 
             if self.path == "/ping":
@@ -705,6 +742,8 @@ class InternalHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "unknown path"}, status=404)
         except Exception as e:
             self._send_json({"error": f"{type(e).__name__}: {e}"}, status=500)
+
+
 
 
 def serve(host, port):
