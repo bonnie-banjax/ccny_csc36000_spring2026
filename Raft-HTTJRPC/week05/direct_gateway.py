@@ -337,6 +337,7 @@ class DirectGatewayServicer(pb_grpc.DirectGatewayServicer):
   #   except asyncio.CancelledError:
   #       sys.stderr.write(f"[DEBUG] Subscription closed for {request.user_a}\n")
  # END
+
   async def SubscribeConversation(self, request, context):
     last_seq = request.after_seq
 
@@ -371,7 +372,8 @@ class DirectGatewayServicer(pb_grpc.DirectGatewayServicer):
                     event = pb.DirectEvent(
                         seq=int(e_data["seq"]),
                         text=e_data["text"],
-                        from_user=e_data["from_user"]
+                        from_user=e_data["from_user"],
+                        server_time_ms=int(e_data.get("server_time_ms", 0))
                     )
                     yield event
                     last_seq = max(last_seq, event.seq)
