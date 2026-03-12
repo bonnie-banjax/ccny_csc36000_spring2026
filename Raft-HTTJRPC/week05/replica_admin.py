@@ -156,16 +156,45 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
         with self.lock:
             last_idx = len(self.log)
             last_term = self.log[-1]["term"] if self.log else 0
+            # 1. Capture types before the return
+            raw_val = self.role
+            raw_type = type(raw_val).__name__
 
+            # 2. Get the integer value the way you currently are
+            try:
+                mapped_int = replica_admin_pb2.Role.Value(raw_val)
+                mapped_type = type(mapped_int).__name__
+            except Exception as e:
+                mapped_int = f"CRASH: {e}"
+                mapped_type = "None"
+
+            # 3. Write to stderr with immediate flush
+            sys.stderr.write(
+                f"[DEBUG Node {self.node_id}] "
+                f"RoleString: '{raw_val}' ({raw_type}) -> "
+                f"ProtoInt: {mapped_int} ({mapped_type})\n"
+            )
+            sys.stderr.flush()
+
+            # This is the return the test depends on
             return replica_admin_pb2.StatusResponse(
                 id=self.node_id,
-                role=replica_admin_pb2.Role.Value(self.role),
+                role=mapped_int, # MUST be an int for the test's 's.role == 2' check
                 term=self.current_term,
                 leader_hint=self.leader_hint,
-                last_log_index=last_idx,
-                last_log_term=last_term,
+                last_log_index=len(self.log),
+                last_log_term=self.log[-1]["term"] if self.log else 0,
                 commit_index=self.commit_index,
             )
+            # return replica_admin_pb2.StatusResponse(
+            #     id=self.node_id,
+            #     role=replica_admin_pb2.Role.Value(self.role),
+            #     term=self.current_term,
+            #     leader_hint=self.leader_hint,
+            #     last_log_index=last_idx,
+            #     last_log_term=last_term,
+            #     commit_index=self.commit_index,
+            # )
 
     # -------------------------------------------------
     # Timer logic
@@ -632,40 +661,15 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
                 "duplicate": False,
             }
 
-    # def handle_read_history(self, data):
-    #     # Gateway can call this on a replica to read committed conversation history.
-    #     with self.lock:
-    #         user_a = str(data["user_a"])
-    #         user_b = str(data["user_b"])
-    #         after_seq = int(data.get("after_seq", 0))
-    #         limit = int(data.get("limit", 100))
-    #
-    #         conv = list(self.messages.get((user_a, user_b), []))
-    #         conv = [e for e in conv if int(e["seq"]) > after_seq]
-    #         conv = conv[-limit:]
-    #
-    #         return {
-    #             "ok": True,
-    #             "events": conv,
-    #             "served_by": [self.addr],
-    #             "commit_index": self.commit_index,
-    #             "role": self.role,
-    #             "leader_hint": self.leader_hint,
-    #         }
-
     def handle_read_history(self, data):
         # Gateway can call this on a replica to read committed conversation history.
         with self.lock:
-            u_a = str(data["user_a"])
-            u_b = str(data["user_b"])
-            # Sort them so (alice, bob) and (bob, alice) point to the same list
-            room_key = tuple(sorted([u_a, u_b]))
-
+            user_a = str(data["user_a"])
+            user_b = str(data["user_b"])
             after_seq = int(data.get("after_seq", 0))
-
             limit = int(data.get("limit", 100))
 
-            conv = list(self.messages.get(room_key, []))
+            conv = list(self.messages.get((user_a, user_b), []))
             conv = [e for e in conv if int(e["seq"]) > after_seq]
             conv = conv[-limit:]
 
@@ -677,7 +681,6 @@ class ReplicaAdmin(replica_admin_pb2_grpc.ReplicaAdminServicer):
                 "role": self.role,
                 "leader_hint": self.leader_hint,
             }
-
 
 class InternalHandler(BaseHTTPRequestHandler):
     # Tiny internal HTTP server for: RequestVote, AppendEntries, leader append from gateway, replica reads from gateway
@@ -708,31 +711,31 @@ class InternalHandler(BaseHTTPRequestHandler):
 
         try:
             data = self._read_json()
-            print(f"DEBUG: Received {self.path} - Data: {data}")
+            # print(f"DEBUG: Received {self.path} - Data: {data}")
 
             if self.path == "/request_vote":
                 self._send_json(self.node.handle_request_vote(data))
                 return
 
             if self.path == "/append_entries":
-                # self._send_json(self.node.handle_append_entries(data))
-                resp = self.node.handle_append_entries(data)
-                print(f"DEBUG: append_entries response: {resp}")
-                self._send_json(resp)
+                self._send_json(self.node.handle_append_entries(data))
+                # resp = self.node.handle_append_entries(data)
+                # print(f"DEBUG: append_entries response: {resp}")
+                # self._send_json(resp)
                 return
 
             if self.path == "/client_append":
-                # self._send_json(self.node.handle_client_append(data))
-                resp = self.node.handle_client_append(data)
-                print(f"DEBUG: client_append response: {resp}")
-                self._send_json(resp)
+                self._send_json(self.node.handle_client_append(data))
+                # resp = self.node.handle_client_append(data)
+                # print(f"DEBUG: client_append response: {resp}")
+                # self._send_json(resp)
                 return
 
             if self.path == "/read_history":
-                # self._send_json(self.node.handle_read_history(data))
-                resp = self.node.handle_read_history(data)
-                print(f"DEBUG: read_history response: {resp}")
-                self._send_json(resp)
+                self._send_json(self.node.handle_read_history(data))
+                # resp = self.node.handle_read_history(data)
+                # print(f"DEBUG: read_history response: {resp}")
+                # self._send_json(resp)
                 return
 
             if self.path == "/ping":
