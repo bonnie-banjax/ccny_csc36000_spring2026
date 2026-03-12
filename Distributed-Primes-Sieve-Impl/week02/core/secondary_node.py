@@ -1,42 +1,5 @@
 #!/usr/bin/env python3
-"""
-secondary_node.py
 
-A "secondary node" HTTP server that exposes prime-range computation via HTTP.
-
-Key features
-------------
-- Exposes POST /compute with the same partitioning + thread/process execution model as primes_cli.py
-- On startup, optionally registers itself with a primary coordinator (primary_node.py) via POST /register
-  so the primary can discover and distribute work across all secondary nodes.
-
-Endpoints
----------
-GET  /health
-    -> {"ok": true, "status": "healthy"}
-
-GET  /info
-    -> basic node metadata (host/port/node_id/cpu_count)
-
-POST /compute
-    JSON body:
-    {
-      "low": 0,                   (required)
-      "high": 1000000,            (required; exclusive)
-      "mode": "count"|"list",     default "count"
-      "chunk": 500000,            default 500000
-      "exec": "single"|"threads"|"processes", default "single"
-      "workers": 8,               default cpu_count
-      "max_return_primes": 5000,  default 5000 (only used when mode="list")
-      "include_per_chunk": true   default false (summary only; avoids huge responses)
-    }
-
-Notes
------
-- Example of how to run from terminal: python3 week01/secondary_node.py --primary http://127.0.0.1:9200 --node-id kbrown
-- For classroom demos, use mode="count" for big ranges to avoid large payloads.
-- "threads" may not speed up CPU-bound work in CPython; "processes" usually will.
-"""
 
 from __future__ import annotations
 
@@ -51,173 +14,189 @@ from urllib.parse import urlparse
 
 import primes_pb2
 import primes_pb2_grpc
-from primes_in_range import get_primes
+from primes_in_range import primes_sieve
+
 
 # ----------------------------
 # Partitioning helpers
 # ----------------------------
 
-def iter_ranges(low: int, high: int, chunk: int) -> List[Tuple[int, int]]:
-    """Split [low, high) into contiguous chunks."""
+# BEGIN new
+
+# generator version
+def iter_ranges(low: int, high: int, chunk: int):
+    """Yield contiguous chunks from [low, high) as a generator."""
     if chunk <= 0:
         raise ValueError("chunk must be > 0")
-    out: List[Tuple[int, int]] = []
+
     x = low
     while x < high:
         y = min(x + chunk, high)
-        out.append((x, y))
+        yield (x, y)
         x = y
-    return out
 
-
-def _work_chunk(args: Tuple[int, int, bool]) -> Dict[str, Any]:
+def _work_chunk(low: int, high: int, mode: int) -> primes_pb2.PerNodeResult:
     """
-    Worker for one chunk.
-    Returns dict for easy JSON serialization.
+    Worker-side task: Sieves and packages data into a Protobuf message.
     """
-    low, high, return_list = args
-
     t0 = time.perf_counter()
-    res = get_primes(low, high, return_list=return_list)
-    t1 = time.perf_counter()
 
-    if return_list:
-        primes = list(res)  # type: ignore[arg-type]
-        return {
-            "low": low,
-            "high": high,
-            "elapsed_s": t1 - t0,
-            "prime_count": len(primes),
-            "max_prime": primes[-1] if primes else -1,
-            "primes": primes,
-        }
+    # 1. Call our validated "Pure Engine"
+    seg = primes_sieve(low, high)
 
-    count = int(res)  # type: ignore[arg-type]
-    return {
-        "low": low,
-        "high": high,
-        "elapsed_s": t1 - t0,
-        "prime_count": count,
-        "max_prime": -1,  # not computed in count mode to avoid extra work
-    }
+    # 2. Initialize the gRPC Message
+    res = primes_pb2.PerNodeResult()
+    res.slice.extend([low, high])
+
+    # 3. Last Mile Processing (Still inside the worker process)
+    if mode == primes_pb2.LIST:
+        primes = [low + i for i, is_p in enumerate(seg) if is_p]
+        res.primes.extend(primes)
+        res.total_primes = len(primes)
+        res.max_prime = primes[-1] if primes else -1
+    else:
+        res.total_primes = sum(seg)
+        res.max_prime = -1 # Not calculated in COUNT mode for speed
+
+    res.node_elapsed_s = time.perf_counter() - t0
+    return res
 
 
-def compute_partitioned(
-    low: int,
-    high: int,
-    *,
-    mode: str = "count",
-    chunk: int = 500_000,
-    exec_mode: str = "single",
-    workers: int | None = None,
-    max_return_primes: int = 5000,
-    include_per_chunk: bool = False,
-) -> Dict[str, Any]:
-    """
-    Perform partitioned computation over [low, high) using get_primes per chunk.
-    """
-    # Resilience: Invalid input handling
-    if high <= low:
-        raise ValueError("high must be > low")
+# END
 
-    if workers is None:
-        workers = os.cpu_count() or 4
-    workers = max(1, int(workers))
+# BEGIN MACHINE SYMPATHETIC VERSION
+import multiprocessing as mp
+import time
+import traceback
+# from primes_in_range import worker_task  # Assumed top-level for pickling
 
-    ranges = iter_ranges(low, high, chunk)
-    want_list = (mode == "list")
 
-    t0 = time.perf_counter()
-    chunk_results: List[Dict[str, Any]] = []
+# BEGIN # Minimal bytecode: unpack and delegate
+def minimal_worker_task_wrapper(args):
+    return worker_task(*args)
+# END minimal wrapper
 
-    # Parallel and Single execution paths
-    if exec_mode == "single":
-        for a, b in ranges:
-            chunk_results.append(_work_chunk((a, b, want_list)))
-    elif exec_mode == "threads":
-        with futures.ThreadPoolExecutor(max_workers=workers) as ex:
-            futs = [ex.submit(_work_chunk, (a, b, want_list)) for a, b in ranges]
-            for f in futures.as_completed(futs):
-                chunk_results.append(f.result())
-    else:  # processes
-        with futures.ProcessPoolExecutor(max_workers=workers) as ex:
-            futs = [ex.submit(_work_chunk, (a, b, want_list)) for a, b in ranges]
-            for f in futures.as_completed(futs):
-                chunk_results.append(f.result())
+# BEGIN this one debug but also gives the actual rest of the fields
+def worker_task_wrapper(args):
+    low, high, mode = args
+    print(f"DEBUG: [Worker] Starting range {low}-{high}")
+    try:
+        result = _work_chunk(low, high, mode)
+        # Check if result is actually populated
+        print(f"DEBUG: [Worker] {low}-{high} found {result.total_primes} primes.")
+        return result
+    except Exception as e:
+        print(f"DEBUG: [Worker CRASH] {low}-{high}: {str(e)}")
+        # Return something identifiable so the dispatcher knows it failed
+        return f"ERROR: {str(e)}"
+# END
 
-    t1 = time.perf_counter()
 
-    chunk_results.sort(key=lambda d: int(d["low"]))
-    total_primes = sum(int(d["prime_count"]) for d in chunk_results)
+# BEGIN real current version
+def compute_partitioned(request):
+  pool = None
+  try:
+    if request.secondary_exec in (primes_pb2.SINGLE, primes_pb2.THREADS):
+      # Generate raw results for the ranges
+      results = [
+          _work_chunk(r[0], r[1], request.mode)
+          for r in iter_ranges(
+              request.low,
+              request.high,
+              request.chunk
+          )
+      ]
+    else:
+      workers = request.secondary_workers or mp.cpu_count()
+      target_mode = request.mode
+      results = []
 
-    max_prime = max((int(d["max_prime"]) for d in chunk_results), default=-1)
-    primes_out = []
-    truncated = False
+      ctx = mp.get_context('spawn')
+      pool = ctx.Pool(processes=workers)
+      # pool = mp.Pool(processes=workers)
 
-    if want_list:
-        for d in chunk_results:
-            ps = d.get("primes") or []
-            if len(primes_out) < max_return_primes:
-                remaining = max_return_primes - len(primes_out)
-                primes_out.extend(ps[:remaining])
-                if len(ps) > remaining:
-                    truncated = True
-            else:
-                truncated = True
+      task_generator = (
+        (r[0], r[1], target_mode)
+        for r in iter_ranges(
+          request.low,
+          request.high,
+          request.chunk
+        ) # END_FOR
+      ) # END_TASK_GENERATOR
 
-    # Return data mapped for gRPC WorkerService
-    return {
-        "total_primes": total_primes,
-        "max_prime": max_prime,
-        "elapsed_seconds": t1 - t0,
-        "primes": primes_out,
-        "primes_truncated": truncated,
-    }
+      try:
+        for res in pool.imap_unordered(
+          worker_task_wrapper,
+          task_generator,
+          chunksize=10
+        ):
+          results.append(res)
+      finally:
+        pool.terminate()
+        pool.join()
+#
+    results.sort(key=lambda x: x.slice[0])
+    response = primes_pb2.ComputeResponse()
+
+    for r in results:
+      response.total_primes += r.total_primes
+      if r.max_prime > response.max_prime:
+        response.max_prime = r.max_prime
+      if request.mode == primes_pb2.LIST:
+        current_len = len(response.primes)
+        if current_len < request.max_return_primes:
+          space_left = request.max_return_primes - current_len
+          response.primes.extend(r.primes[:space_left])
+          if len(r.primes) > space_left:
+            response.primes_truncated = True
+        else:
+          response.primes_truncated = True
+
+    return response
+  # END_TRY
+  except Exception as e:
+    if pool:
+      pool.terminate()
+    error_msg = (
+      f"Secondary Node internal error: {str(e)}\n"
+      f"{traceback.format_exc()}"
+    )
+    print(error_msg)
+    fail_res = primes_pb2.ComputeResponse()
+    return fail_res
+# END version
+
+# END
+
 
 # ----------------------------
 # gRPC Worker Service
 # ----------------------------
 
 class WorkerService(primes_pb2_grpc.WorkerServiceServicer):
-    """Implementing Task 2: WorkerService"""
+  """Implementing Task 2: WorkerService"""
 
-    def ComputeRange(self, request, context):
-        # Mapping Enums (Task 1) to Business Logic strings
-        mode_str = "count" if request.mode == primes_pb2.COUNT else "list"
-        exec_map = {
-            primes_pb2.SINGLE: "single",
-            primes_pb2.THREADS: "threads",
-            primes_pb2.PROCESSES: "processes"
-        }
+  def ComputeRange(self, request, context):
 
-        try:
-            res = compute_partitioned(
-                low=request.low, high=request.high, mode=mode_str,
-                chunk=request.chunk, exec_mode=exec_map.get(request.secondary_exec, "single"),
-                workers=request.secondary_workers, max_return_primes=request.max_return_primes,
-                include_per_chunk=request.include_per_node
-            )
-            # Returning typed protobuf responses
-            return primes_pb2.ComputeResponse(
-                total_primes=res["total_primes"],
-                max_prime=res["max_prime"],
-                elapsed_seconds=res["elapsed_seconds"],
-                primes=res["primes"],
-                primes_truncated=res["primes_truncated"]
-            )
-        except ValueError as e:
-            # Resilience: Error mapping for invalid inputs
-            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-            context.set_details(str(e))
-            return primes_pb2.ComputeResponse()
-        except Exception as e:
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Internal error: {str(e)}")
-            return primes_pb2.ComputeResponse()
+    try:
+      if request.high <= request.low:
+        raise ValueError("high must be greater than low")
+      if request.low < 2:
+        raise ValueError("minimum low value is 2")
+      return compute_partitioned(request)
+    except ValueError as e:
+      # Resilience: Error mapping for invalid inputs
+      context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+      context.set_details(str(e))
+      return primes_pb2.ComputeResponse()
+    except Exception as e:
+      context.set_code(grpc.StatusCode.INTERNAL)
+      context.set_details(f"Internal error: {str(e)}")
+      return primes_pb2.ComputeResponse()
 
-    def Health(self, request, context):
-        """Standard gRPC Health check"""
-        return primes_pb2.HealthCheckResponse(status="SERVING")
+  def Health(self, request, context):
+    """Standard gRPC Health check"""
+    return primes_pb2. HealthCheckResponse(status="SERVING")
 
 # ----------------------------
 # Helper: IP Detection
@@ -246,6 +225,8 @@ def main() -> None:
     ap.add_argument("--node-id", default=socket.gethostname(), help="Node ID.")
     ap.add_argument("--coordinator", default="localhost:50051", help="Coordinator address.")
     args = ap.parse_args()
+
+    mp.set_start_method('spawn', force=True)
 
     # Step 1: Start the gRPC Server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

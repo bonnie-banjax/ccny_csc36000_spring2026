@@ -50,6 +50,7 @@ Thumbs.db
 
 # Python virtual environment (Dependencies folder)
 venv/
+auto_venv/
 
 # Python cache files
 __pycache__/
