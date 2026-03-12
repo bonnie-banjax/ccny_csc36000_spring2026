@@ -9,6 +9,10 @@ LOG_FILE = "tests/system_test.log"
 PRIMARY_URL = "http://127.0.0.1:9200"
 PYTHON_BIN = "python3"  # Adjust to 'python' if on Windows
 
+PRIMARY_NODE = "core/primary_node.py"
+WORKER_NODE = "core/secondary_node.py"
+PRIMES_CLI = "core/primes_cli.py"
+
 def log_separator(msg):
     with open(LOG_FILE, "a") as f:
         f.write(f"\n{'='*20} {msg} {'='*20}\n")
@@ -24,19 +28,23 @@ def main():
         # 1. Start Primary
         print("Starting Primary Node...")
         primary_proc = subprocess.Popen(
-            [PYTHON_BIN, "-u", "core/primary_node.py", "--port", "9200"],
+            [PYTHON_BIN, "-u", PRIMARY_NODE, "--port", "9200"],
             stdout=log_file_handle, stderr=log_file_handle
         )
         time.sleep(2) # Allow boot time
 
-        # 2. Start Two Secondaries
+        # 2. Start Secondaries
         print("Starting Secondary Nodes...")
         sec1 = subprocess.Popen(
-            [PYTHON_BIN, "-u", "core/secondary_node.py", "--port", "9101", "--primary", PRIMARY_URL, "--node-id", "Alpha"],
+            [PYTHON_BIN, "-u", WORKER_NODE, "--port", "9101", "--primary", PRIMARY_URL, "--node-id", "Alpha"],
             stdout=log_file_handle, stderr=log_file_handle
         )
         sec2 = subprocess.Popen(
-            [PYTHON_BIN, "-u", "core/secondary_node.py", "--port", "9102", "--primary", PRIMARY_URL, "--node-id", "Beta"],
+            [PYTHON_BIN, "-u", WORKER_NODE, "--port", "9102", "--primary", PRIMARY_URL, "--node-id", "Beta"],
+            stdout=log_file_handle, stderr=log_file_handle
+        )
+        sec3 = subprocess.Popen(
+            [PYTHON_BIN, "-u", WORKER_NODE, "--port", "9103", "--primary", PRIMARY_URL, "--node-id", "Beta"],
             stdout=log_file_handle, stderr=log_file_handle
         )
         time.sleep(3) # Allow registration time
@@ -60,7 +68,7 @@ def main():
         print("Initiating Distributed Compute Request...")
         log_separator("CLI OUTPUT START")
         cli_cmd = [
-            PYTHON_BIN, "core/primes_cli.py",
+            PYTHON_BIN, PRIMES_CLI,
             "--low", "0",
             "--high", "1000000",
             "--exec", "distributed",
@@ -83,6 +91,7 @@ def main():
         primary_proc.terminate()
         sec1.terminate()
         sec2.terminate()
+        sec3.terminate()
         log_file_handle.close()
 
 if __name__ == "__main__":

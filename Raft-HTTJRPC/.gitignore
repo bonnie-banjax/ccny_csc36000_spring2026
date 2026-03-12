@@ -50,6 +50,15 @@ Thumbs.db
 
 # Python virtual environment (Dependencies folder)
 venv/
+auto_venv/
 
 # Python cache files
 __pycache__/
+
+
+# from inner .gitignore
+.runtime
+*.egg-info
+
+# file system bad, database good
+.directory
