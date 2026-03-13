@@ -1,3 +1,0 @@
-direct_client
-direct_client_pb2
-direct_client_pb2_grpc

@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: direct-chat
-Version: 0.1.0
-Summary: Direct (1:1) chat client + gateway protos
-Requires-Dist: grpcio>=1.60.0
-Requires-Dist: protobuf>=4.25.0
-Dynamic: requires-dist
-Dynamic: summary
