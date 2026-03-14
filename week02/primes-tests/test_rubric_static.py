@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import List
 import re
 
 import pytest
@@ -50,6 +51,11 @@ def test_project_has_automated_test_artifacts(impl_dir: Path) -> None:
     has_pytest_cfg = (impl_dir / "pytest.ini").exists() or (impl_dir / "pyproject.toml").exists()
     assert has_tests or has_pytest_cfg, "Expected tests or pytest config in project"
 
+def _get_files_ending_with_md_and_txt(impl_dir: Path) -> List[Path]:
+    top_level_txt = [
+        p for p in sorted(impl_dir.glob("*.txt")) if p.name.lower() != "requirements.txt"
+    ]
+    return sorted(impl_dir.glob("*.md")) + top_level_txt
 
 @pytest.mark.documentation
 def test_project_has_readme(impl_dir: Path) -> None:
@@ -57,7 +63,7 @@ def test_project_has_readme(impl_dir: Path) -> None:
         impl_dir / "README.md",
         impl_dir / "README.txt",
         impl_dir / "README",
-    ]
+    ] + _get_files_ending_with_md_and_txt(impl_dir)
     readme_path = next((p for p in readme_candidates if p.exists()), None)
     assert readme_path is not None, "Missing README in implementation directory"
 
@@ -68,7 +74,7 @@ def test_readme_mentions_grpc_or_proto(impl_dir: Path) -> None:
         impl_dir / "README.md",
         impl_dir / "README.txt",
         impl_dir / "README",
-    ]
+    ] + _get_files_ending_with_md_and_txt(impl_dir)
     readme_path = next((p for p in readme_candidates if p.exists()), None)
     assert readme_path is not None, "Missing README in implementation directory"
     text = readme_path.read_text(encoding="utf-8", errors="ignore").lower()

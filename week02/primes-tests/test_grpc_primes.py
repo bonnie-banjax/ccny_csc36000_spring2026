@@ -122,6 +122,7 @@ class Api:
         include_per_node: bool,
     ) -> Any:
         req = _first_message_instance(self.pb2, ["ComputeRequest"])
+        _set_first_existing_field(req, ["exec"], "distributed")
         _set_first_existing_field(req, ["low"], low)
         _set_first_existing_field(req, ["high"], high)
         _set_first_existing_field(req, ["chunk"], chunk)
@@ -130,8 +131,8 @@ class Api:
         mode_val = _enum_value(self.pb2, "Mode", mode.upper())
         _set_first_existing_field(req, ["mode"], mode_val)
 
-        exec_val = _enum_value(self.pb2, "ExecMode", secondary_exec.upper())
-        _set_first_existing_field(req, ["sec_exec", "secondary_exec", "exec_mode", "exec"], exec_val)
+        secondary_exec_val = _enum_value(self.pb2, "ExecMode", secondary_exec.upper())
+        _set_first_existing_field(req, ["sec_exec", "secondary_exec"], secondary_exec_val)
 
         _set_first_existing_field(req, ["sec_workers", "secondary_workers", "workers"], secondary_workers)
         _set_first_existing_field(req, ["include_per_node", "include_per_chunk"], include_per_node)
