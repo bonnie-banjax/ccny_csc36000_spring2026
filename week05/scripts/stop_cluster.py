@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from common import (
     best_effort_stop_cluster_pids,
+    best_effort_stop_listening_ports,
+    extract_cluster_ports,
     load_cluster_if_present,
     null_out_all_pids,
     write_cluster,
@@ -16,6 +18,7 @@ def main() -> int:
         return 0
 
     best_effort_stop_cluster_pids(data)
+    best_effort_stop_listening_ports(extract_cluster_ports(data))
     null_out_all_pids(data)
 
     try:

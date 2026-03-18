@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+import sys
 
 from common import (
     best_effort_stop_pid,
@@ -9,6 +11,12 @@ from common import (
     load_or_init_cluster,
     write_cluster,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from raft_support import ReplicaAvailabilityMessage, ReplicaTransportClient
 
 
 def _parse_args() -> argparse.Namespace:
@@ -31,8 +39,21 @@ def main() -> int:
         data, args.replica_id, args.host, args.replica_start_port
     )
 
-    best_effort_stop_pid(rep.get("pid"))
-    rep["pid"] = None
+    pid = rep.get("pid")
+    if isinstance(pid, int):
+        control_client = None
+        try:
+            control_client = ReplicaTransportClient(str(rep["addr"]))
+            control_client.set_replica_availability(
+                ReplicaAvailabilityMessage(paused=True),
+                timeout_seconds=2.0,
+            )
+        except Exception:
+            best_effort_stop_pid(pid)
+            rep["pid"] = None
+        finally:
+            if control_client is not None:
+                control_client.close()
 
     write_cluster(data)
     return 0

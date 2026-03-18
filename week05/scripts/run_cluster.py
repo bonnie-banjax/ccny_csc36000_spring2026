@@ -7,8 +7,11 @@ from common import (
     ROOT,
     RUNTIME_DIR,
     best_effort_stop_cluster_pids,
+    best_effort_stop_listening_ports,
+    default_cluster,
+    extract_cluster_ports,
     load_cluster_if_present,
-    start_process,
+    start_process_and_wait_until_ready,
     write_cluster,
 )
 
@@ -34,6 +37,11 @@ def main() -> int:
     existing = load_cluster_if_present()
     if existing is not None:
         best_effort_stop_cluster_pids(existing)
+        best_effort_stop_listening_ports(extract_cluster_ports(existing))
+
+    intended_cluster = default_cluster(args.host, args.replica_start_port)
+    intended_cluster["gateway"]["addr"] = f"{args.host}:{args.gateway_port}"
+    best_effort_stop_listening_ports(extract_cluster_ports(intended_cluster))
 
     host = args.host
     gateway_addr = f"{host}:{args.gateway_port}"
@@ -45,7 +53,7 @@ def main() -> int:
         rid = i + 1
         port = args.replica_start_port + i
         addr = f"{host}:{port}"
-        proc = start_process(
+        proc = start_process_and_wait_until_ready(
             [
                 sys.executable,
                 str(ROOT / "replica_admin.py"),
@@ -55,11 +63,12 @@ def main() -> int:
                 str(port),
             ],
             RUNTIME_DIR / f"replica_{rid}.log",
+            addr=addr,
         )
         replica_entries.append({"id": rid, "addr": addr, "pid": proc.pid})
 
     # Start gateway and always pass host+port explicitly.
-    gw_proc = start_process(
+    gw_proc = start_process_and_wait_until_ready(
         [
             sys.executable,
             str(ROOT / "direct_gateway.py"),
@@ -69,6 +78,7 @@ def main() -> int:
             str(args.gateway_port),
         ],
         RUNTIME_DIR / "gateway.log",
+        addr=gateway_addr,
     )
 
     cluster = {

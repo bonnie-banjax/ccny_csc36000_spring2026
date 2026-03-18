@@ -7,9 +7,10 @@ from common import (
     ROOT,
     RUNTIME_DIR,
     best_effort_stop_pid,
+    best_effort_stop_listening_ports,
     find_or_create_replica_entry,
     load_or_init_cluster,
-    start_process,
+    start_process_and_wait_until_ready,
     write_cluster,
 )
 
@@ -35,13 +36,16 @@ def main() -> int:
         data, args.replica_id, args.host, args.replica_start_port
     )
 
-    best_effort_stop_pid(rep.get("pid"))
+    existing_pid = rep.get("pid")
+    if isinstance(existing_pid, int):
+        best_effort_stop_pid(existing_pid)
 
     port = args.replica_start_port + (args.replica_id - 1)
+    best_effort_stop_listening_ports([port])
     host = args.host
     addr = f"{host}:{port}"
 
-    proc = start_process(
+    proc = start_process_and_wait_until_ready(
         [
             sys.executable,
             str(ROOT / "replica_admin.py"),
@@ -51,6 +55,7 @@ def main() -> int:
             str(port),
         ],
         RUNTIME_DIR / f"replica_{args.replica_id}.log",
+        addr=addr,
     )
 
     rep["addr"] = addr
