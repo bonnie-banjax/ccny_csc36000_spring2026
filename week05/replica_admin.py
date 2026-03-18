@@ -11,7 +11,11 @@ from concurrent import futures
 
 import grpc
 
+# `PROJECT_ROOT` is this file's directory and is used to locate generated
+# protobuf modules before the imports execute.
 PROJECT_ROOT = __file__.rsplit("/", 1)[0]
+# `GENERATED_DIRECTORY` points at the generated gRPC Python package imported by
+# this module during replica startup.
 GENERATED_DIRECTORY = f"{PROJECT_ROOT}/generated"
 if GENERATED_DIRECTORY not in sys.path:
     sys.path.insert(0, GENERATED_DIRECTORY)
@@ -43,8 +47,11 @@ from raft_support import (
 )
 
 
+# Human-readable role label used when the replica is passively following a leader.
 FOLLOWER_ROLE_NAME = "FOLLOWER"
+# Human-readable role label used while the replica is campaigning for leadership.
 CANDIDATE_ROLE_NAME = "CANDIDATE"
+# Human-readable role label used while the replica is the active leader.
 LEADER_ROLE_NAME = "LEADER"
 
 
@@ -58,6 +65,24 @@ class ReplicaStateMachine:
     """
 
     def __init__(self, replica_id: int, listen_address: str, all_replica_addresses: list[str], start_in_disabled_mode: bool = False):
+        """
+        Initialize all in-memory Raft state and local bookkeeping for one replica.
+
+        Inputs:
+        - `replica_id`: numeric id derived from the configured port.
+        - `listen_address`: host:port peers and scripts use to reach this replica.
+        - `all_replica_addresses`: every configured replica address in the
+          cluster, including this replica.
+        - `start_in_disabled_mode`: whether the process should begin as an
+          administratively stopped placeholder.
+
+        Output:
+        - No return value. The constructor prepares state used later by RPC
+          handlers and background threads.
+
+        Called by:
+        - `main()` when the replica process starts.
+        """
         self.replica_id = replica_id
         self.listen_address = listen_address
         self.all_replica_addresses = list(all_replica_addresses)
@@ -98,20 +123,63 @@ class ReplicaStateMachine:
         # configured address, but it refuses to vote, replicate, or serve reads.
         self.disabled_mode_enabled = start_in_disabled_mode
         self.rejoin_ready_time_monotonic = 0.0 if start_in_disabled_mode else (time.monotonic() + 0.75)
+        self._log(
+            f"started on {self.listen_address} with peers={self.peer_addresses} disabled={self.disabled_mode_enabled}"
+        )
 
     def start_background_threads(self) -> None:
+        """
+        Start the election and heartbeat loops for an active replica.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No return value. The method spawns daemon threads unless the replica
+          is intentionally starting in disabled mode.
+
+        Called by:
+        - `main()` after it constructs `ReplicaStateMachine`.
+        """
         if self.disabled_mode_enabled:
             return
         threading.Thread(target=self._run_election_timer_loop, name=f"replica-{self.replica_id}-election", daemon=True).start()
         threading.Thread(target=self._run_heartbeat_loop, name=f"replica-{self.replica_id}-heartbeat", daemon=True).start()
 
     def stop_background_threads(self) -> None:
+        """
+        Signal background loops to stop and close all peer RPC transports.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No return value. The method wakes waiting threads and releases gRPC
+          client resources during process shutdown.
+
+        Called by:
+        - `main()` in the server shutdown `finally` block.
+        """
         self.stop_requested.set()
         with self.state_lock:
             self.state_changed.notify_all()
         self.transport_pool.close_all()
 
     def build_status_response(self) -> replica_admin_pb2.StatusResponse:
+        """
+        Snapshot the replica's current externally visible status.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - Returns a `replica_admin_pb2.StatusResponse` describing id, role, term,
+          leader hint, and log/commit progress.
+
+        Called by:
+        - `ReplicaAdminService.Status()` when tests or scripts issue the public
+          status RPC.
+        """
         with self.state_lock:
             return replica_admin_pb2.StatusResponse(
                 id=self.replica_id,
@@ -124,11 +192,35 @@ class ReplicaStateMachine:
             )
 
     def handle_request_vote(self, request_message: RequestVoteMessage) -> RequestVoteReply:
+        """
+        Process one Raft `RequestVote` RPC from a candidate replica.
+
+        Inputs:
+        - `request_message`: candidate term/id plus its last log index and term.
+
+        Output:
+        - Returns `RequestVoteReply` indicating the responder's term and whether
+          the vote was granted.
+
+        Called by:
+        - The generic internal RPC handler registered in `main()` for
+          `raft.Internal/RequestVote`.
+        - Peer replicas reach that callsite from `_run_election_timer_loop()`.
+        """
         with self.state_lock:
+            self._log(
+                f"received RequestVote from replica {request_message.candidate_id} "
+                f"term={request_message.term} last_log=({request_message.last_log_index}, {request_message.last_log_term})"
+            )
             if self._raft_participation_is_paused_locked():
+                self._log("rejecting RequestVote because this replica is paused")
                 return RequestVoteReply(term=self.current_term, vote_granted=False)
 
             if request_message.term < self.current_term:
+                self._log(
+                    f"rejecting RequestVote from replica {request_message.candidate_id} "
+                    f"because candidate term {request_message.term} is older than current term {self.current_term}"
+                )
                 return RequestVoteReply(term=self.current_term, vote_granted=False)
 
             if request_message.term > self.current_term:
@@ -143,16 +235,52 @@ class ReplicaStateMachine:
             if can_vote_for_candidate and candidate_log_is_up_to_date:
                 self.voted_for_replica_id = request_message.candidate_id
                 self._reset_election_deadline_locked()
+                self._log(
+                    f"granted vote to replica {request_message.candidate_id} for term {request_message.term}"
+                )
                 return RequestVoteReply(term=self.current_term, vote_granted=True)
 
+            self._log(
+                f"rejecting vote for replica {request_message.candidate_id}; "
+                f"can_vote={can_vote_for_candidate} candidate_log_up_to_date={candidate_log_is_up_to_date}"
+            )
             return RequestVoteReply(term=self.current_term, vote_granted=False)
 
     def handle_append_entries(self, request_message: AppendEntriesMessage) -> AppendEntriesReply:
+        """
+        Process one Raft `AppendEntries` RPC carrying heartbeats or log entries.
+
+        Inputs:
+        - `request_message`: leader metadata, previous-log match point, new
+          entries, and the leader's commit index.
+
+        Output:
+        - Returns `AppendEntriesReply` indicating the current term, whether the
+          append succeeded, and the best known matching log index.
+
+        Called by:
+        - The generic internal RPC handler registered in `main()` for
+          `raft.Internal/AppendEntries`.
+        - Peer leaders reach that callsite from `_run_one_replication_round()`.
+        """
         with self.state_lock:
+            if request_message.entries:
+                self._log(
+                    f"received AppendEntries from leader {request_message.leader_id} at {request_message.leader_address} "
+                    f"term={request_message.term} prev_index={request_message.prev_log_index} "
+                    f"entry_count={len(request_message.entries)} leader_commit={request_message.leader_commit}"
+                )
             if self._raft_participation_is_paused_locked():
+                if request_message.entries:
+                    self._log("rejecting AppendEntries because this replica is paused")
                 return AppendEntriesReply(term=self.current_term, success=False, match_index=self._last_log_index_locked())
 
             if request_message.term < self.current_term:
+                if request_message.entries:
+                    self._log(
+                        f"rejecting AppendEntries from {request_message.leader_address} because "
+                        f"term {request_message.term} is older than current term {self.current_term}"
+                    )
                 return AppendEntriesReply(
                     term=self.current_term,
                     success=False,
@@ -173,6 +301,11 @@ class ReplicaStateMachine:
             self._reset_election_deadline_locked()
 
             if request_message.prev_log_index >= len(self.log_entries):
+                if request_message.entries:
+                    self._log(
+                        f"rejecting AppendEntries because prev_log_index {request_message.prev_log_index} "
+                        f"is beyond local log length {len(self.log_entries) - 1}"
+                    )
                 return AppendEntriesReply(
                     term=self.current_term,
                     success=False,
@@ -183,6 +316,11 @@ class ReplicaStateMachine:
                 conflicting_index = request_message.prev_log_index
                 while conflicting_index > 0 and self.log_entries[conflicting_index].term == self.log_entries[request_message.prev_log_index].term:
                     conflicting_index -= 1
+                if request_message.entries:
+                    self._log(
+                        f"rejecting AppendEntries because local term at index {request_message.prev_log_index} "
+                        f"does not match prev_log_term {request_message.prev_log_term}; suggesting retry from {conflicting_index}"
+                    )
                 return AppendEntriesReply(
                     term=self.current_term,
                     success=False,
@@ -207,6 +345,11 @@ class ReplicaStateMachine:
             if insertion_index + compare_index < len(self.log_entries):
                 truncated_suffix_entries = self.log_entries[insertion_index + compare_index :]
                 self.log_entries = self.log_entries[: insertion_index + compare_index]
+                if truncated_suffix_entries:
+                    self._log(
+                        f"truncated {len(truncated_suffix_entries)} conflicting log entr{'y' if len(truncated_suffix_entries) == 1 else 'ies'} "
+                        f"starting at index {truncated_suffix_entries[0].index}"
+                    )
 
                 # If we truncate away an uncommitted suffix, any pending dedup record
                 # that pointed into that suffix must also be removed.
@@ -220,6 +363,10 @@ class ReplicaStateMachine:
                 payload = remaining_entry.payload
                 client_message_key = (payload["client_id"], payload["client_msg_id"])
                 self.pending_sequence_by_client_message_key[client_message_key] = remaining_entry.index
+                self._log(
+                    f"appended replicated message {payload['client_id']}:{payload['client_msg_id']} "
+                    f"at log index {remaining_entry.index}"
+                )
 
             if request_message.leader_commit > self.commit_index:
                 self.commit_index = min(request_message.leader_commit, self._last_log_index_locked())
@@ -233,10 +380,31 @@ class ReplicaStateMachine:
             )
 
     def handle_client_write(self, request_message: ClientWriteMessage) -> ClientWriteReply:
+        """
+        Accept or reject one client write forwarded by the gateway.
+
+        Inputs:
+        - `request_message`: sender, recipient, client identity, client message
+          id, and message text.
+
+        Output:
+        - Returns `ClientWriteReply` reporting whether the write committed, what
+          term/leader was involved, and the committed sequence number if any.
+
+        Called by:
+        - The generic internal RPC handler registered in `main()` for
+          `raft.Internal/ClientWrite`.
+        - The gateway reaches that callsite from `DirectGatewayService.SendDirect`.
+        """
         client_message_key = (request_message.client_id, request_message.client_msg_id)
 
         with self.state_lock:
+            self._log(
+                f"received ClientWrite from gateway for {request_message.from_user}->{request_message.to_user} "
+                f"message={request_message.client_id}:{request_message.client_msg_id}"
+            )
             if self._raft_participation_is_paused_locked():
+                self._log("rejecting ClientWrite because this replica is paused")
                 return ClientWriteReply(
                     accepted=False,
                     term=self.current_term,
@@ -246,6 +414,9 @@ class ReplicaStateMachine:
                 )
 
             if self.role_name != LEADER_ROLE_NAME:
+                self._log(
+                    f"rejecting ClientWrite because this replica is not leader; leader_hint={self.known_leader_address or 'unknown'}"
+                )
                 return ClientWriteReply(
                     accepted=False,
                     term=self.current_term,
@@ -256,6 +427,10 @@ class ReplicaStateMachine:
 
             existing_committed_sequence = self.committed_sequence_by_client_message_key.get(client_message_key)
             if existing_committed_sequence is not None:
+                self._log(
+                    f"returning existing committed sequence {existing_committed_sequence} "
+                    f"for duplicate client message {client_message_key}"
+                )
                 return ClientWriteReply(
                     accepted=True,
                     term=self.current_term,
@@ -282,12 +457,22 @@ class ReplicaStateMachine:
                 self.log_entries.append(next_log_entry)
                 self.pending_sequence_by_client_message_key[client_message_key] = next_log_index
                 pending_sequence = next_log_index
+                self._log(
+                    f"accepted new client write and appended it locally at log index {next_log_index}"
+                )
+            else:
+                self._log(
+                    f"client write is already pending at log index {pending_sequence}; waiting for commit"
+                )
 
         write_committed = self._replicate_until_committed(target_log_index=pending_sequence, timeout_seconds=3.5)
 
         with self.state_lock:
             committed_sequence = self.committed_sequence_by_client_message_key.get(client_message_key)
             if write_committed and committed_sequence is not None:
+                self._log(
+                    f"committed client message {(request_message.client_id, request_message.client_msg_id)} at seq {committed_sequence}"
+                )
                 return ClientWriteReply(
                     accepted=True,
                     term=self.current_term,
@@ -307,8 +492,30 @@ class ReplicaStateMachine:
             )
 
     def handle_read_conversation(self, request_message: ReadConversationMessage) -> ReadConversationReply:
+        """
+        Serve a read-only conversation history request from the gateway.
+
+        Inputs:
+        - `request_message`: canonical user pair, lower sequence bound, and
+          optional result limit.
+
+        Output:
+        - Returns `ReadConversationReply` containing accept/reject status,
+          leader hint, serving replica address, and any matching events.
+
+        Called by:
+        - The generic internal RPC handler registered in `main()` for
+          `raft.Internal/ReadConversation`.
+        - The gateway reaches that callsite from
+          `DirectGatewayService.GetConversationHistory`.
+        """
         with self.state_lock:
+            self._log(
+                f"received ReadConversation from gateway for users=({request_message.user_a}, {request_message.user_b}) "
+                f"after_seq={request_message.after_seq} limit={request_message.limit}"
+            )
             if self._raft_participation_is_paused_locked():
+                self._log("rejecting ReadConversation because this replica is paused")
                 return ReadConversationReply(
                     accepted=False,
                     term=self.current_term,
@@ -319,6 +526,10 @@ class ReplicaStateMachine:
                 )
 
             if self.last_applied_index < self.commit_index:
+                self._log(
+                    f"rejecting ReadConversation because apply lag exists "
+                    f"(last_applied_index={self.last_applied_index}, commit_index={self.commit_index})"
+                )
                 return ReadConversationReply(
                     accepted=False,
                     term=self.current_term,
@@ -336,6 +547,7 @@ class ReplicaStateMachine:
                 if event.seq > request_message.after_seq
             ]
             limited_events = filtered_events[: request_message.limit or len(filtered_events)]
+            self._log(f"serving read with {len(limited_events)} event(s) from {self.listen_address}")
 
             return ReadConversationReply(
                 accepted=True,
@@ -357,6 +569,24 @@ class ReplicaStateMachine:
             )
 
     def handle_set_replica_availability(self, request_message: ReplicaAvailabilityMessage) -> ReplicaAvailabilityReply:
+        """
+        Toggle this replica between active mode and administrative stop mode.
+
+        Inputs:
+        - `request_message`: boolean pause flag where `True` means stop and
+          `False` means resume.
+
+        Output:
+        - Returns `ReplicaAvailabilityReply(acknowledged=True)` after applying
+          the requested state change.
+
+        Called by:
+        - The generic internal RPC handler registered in `main()` for
+          `raft.Internal/SetReplicaAvailability`.
+        - Cluster management scripts such as `stop_replica.py` and
+          `start_replica.py`.
+        """
+        self._log(f"received SetReplicaAvailability paused={request_message.paused}")
         if request_message.paused:
             self.enter_disabled_mode()
         else:
@@ -364,6 +594,19 @@ class ReplicaStateMachine:
         return ReplicaAvailabilityReply(acknowledged=True)
 
     def _run_election_timer_loop(self) -> None:
+        """
+        Background thread that starts elections when the leader appears absent.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No return value during normal operation. The loop exits when
+          `self.stop_requested` is set.
+
+        Called by:
+        - `start_background_threads()` in a daemon thread.
+        """
         while not self.stop_requested.is_set():
             time.sleep(0.05)
 
@@ -381,6 +624,7 @@ class ReplicaStateMachine:
                 self.voted_for_replica_id = self.replica_id
                 self.known_leader_address = ""
                 self._reset_election_deadline_locked()
+                self._log(f"starting election for term {self.current_term}")
 
                 candidate_term = self.current_term
                 last_log_index = self._last_log_index_locked()
@@ -397,6 +641,10 @@ class ReplicaStateMachine:
                 if self.stop_requested.is_set():
                     return
 
+                self._log(
+                    f"requesting vote from {peer_address} for term {candidate_term} "
+                    f"with last_log=({last_log_index}, {last_log_term})"
+                )
                 try:
                     peer_reply = self.transport_pool.get_client(peer_address).request_vote(
                         RequestVoteMessage(
@@ -408,6 +656,7 @@ class ReplicaStateMachine:
                         timeout_seconds=0.08,
                     )
                 except grpc.RpcError:
+                    self._log(f"vote request to {peer_address} failed at transport level")
                     continue
 
                 with self.state_lock:
@@ -420,12 +669,29 @@ class ReplicaStateMachine:
 
                     if peer_reply.vote_granted:
                         granted_votes += 1
+                    self._log(
+                        f"vote reply from {peer_address}: granted={peer_reply.vote_granted} "
+                        f"term={peer_reply.term} total_votes={granted_votes}"
+                    )
 
                     if granted_votes >= majority_vote_count:
                         self._become_leader_locked()
                         break
 
     def _run_heartbeat_loop(self) -> None:
+        """
+        Background thread that keeps followers updated while this replica is leader.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No return value during normal operation. The loop exits when
+          `self.stop_requested` is set.
+
+        Called by:
+        - `start_background_threads()` in a daemon thread.
+        """
         while not self.stop_requested.is_set():
             should_send_heartbeats = False
             with self.state_lock:
@@ -438,6 +704,20 @@ class ReplicaStateMachine:
                 time.sleep(0.05)
 
     def _replicate_until_committed(self, target_log_index: int, timeout_seconds: float) -> bool:
+        """
+        Keep running replication rounds until a target log index is committed.
+
+        Inputs:
+        - `target_log_index`: the leader log index that should reach commit.
+        - `timeout_seconds`: maximum amount of time to wait.
+
+        Output:
+        - Returns `True` if the target index becomes committed before timeout and
+          `False` otherwise.
+
+        Called by:
+        - `handle_client_write()` after the leader appends a new client message.
+        """
         deadline_monotonic = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline_monotonic and not self.stop_requested.is_set():
             with self.state_lock:
@@ -457,6 +737,20 @@ class ReplicaStateMachine:
             return self.commit_index >= target_log_index
 
     def _run_one_replication_round(self) -> None:
+        """
+        Send one AppendEntries pass to every peer and update match/next indexes.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No direct return value. The method mutates replication state and may
+          advance commit progress.
+
+        Called by:
+        - `_run_heartbeat_loop()` for periodic leader heartbeats.
+        - `_replicate_until_committed()` while waiting on a client write.
+        """
         if not self.replication_lock.acquire(blocking=False):
             return
 
@@ -482,6 +776,11 @@ class ReplicaStateMachine:
                     current_commit_index = self.commit_index
 
                 try:
+                    if entries_to_send:
+                        self._log(
+                            f"sending {len(entries_to_send)} replicated entr{'y' if len(entries_to_send) == 1 else 'ies'} "
+                            f"to {peer_address} starting at index {entries_to_send[0]['index']}"
+                        )
                     peer_reply = self.transport_pool.get_client(peer_address).append_entries(
                         AppendEntriesMessage(
                             term=current_term,
@@ -495,6 +794,8 @@ class ReplicaStateMachine:
                         timeout_seconds=0.08,
                     )
                 except grpc.RpcError:
+                    if entries_to_send:
+                        self._log(f"replication RPC to {peer_address} failed at transport level")
                     continue
 
                 with self.state_lock:
@@ -508,9 +809,18 @@ class ReplicaStateMachine:
                     if peer_reply.success:
                         self.match_index_by_peer_address[peer_address] = peer_reply.match_index
                         self.next_index_by_peer_address[peer_address] = peer_reply.match_index + 1
+                        if entries_to_send:
+                            self._log(
+                                f"{peer_address} accepted replication through index {peer_reply.match_index}"
+                            )
                     else:
                         current_next_index = self.next_index_by_peer_address.get(peer_address, self._last_log_index_locked() + 1)
                         self.next_index_by_peer_address[peer_address] = max(1, min(current_next_index - 1, peer_reply.match_index + 1))
+                        if entries_to_send:
+                            self._log(
+                                f"{peer_address} rejected replication; backing next index down to "
+                                f"{self.next_index_by_peer_address[peer_address]}"
+                            )
 
             with self.state_lock:
                 self._advance_commit_index_locked()
@@ -518,6 +828,20 @@ class ReplicaStateMachine:
             self.replication_lock.release()
 
     def _advance_commit_index_locked(self) -> None:
+        """
+        Advance the leader commit index once a current-term entry has majority support.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller must already hold
+          `self.state_lock`.
+
+        Output:
+        - No return value. The method may update `self.commit_index`, apply new
+          entries, and wake waiting threads.
+
+        Called by:
+        - `_run_one_replication_round()` after collecting peer replies.
+        """
         if self.role_name != LEADER_ROLE_NAME:
             return
 
@@ -543,6 +867,21 @@ class ReplicaStateMachine:
                 return
 
     def _apply_committed_entries_locked(self) -> None:
+        """
+        Apply newly committed log entries into the materialized chat state.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller must already hold
+          `self.state_lock`.
+
+        Output:
+        - No return value. The method updates read-serving structures and clears
+          pending dedup records for applied client messages.
+
+        Called by:
+        - `handle_append_entries()` when a follower learns a higher commit index.
+        - `_advance_commit_index_locked()` when the leader commits an entry.
+        """
         while self.last_applied_index < self.commit_index:
             self.last_applied_index += 1
             log_entry = self.log_entries[self.last_applied_index]
@@ -569,50 +908,200 @@ class ReplicaStateMachine:
             self.pending_sequence_by_client_message_key.pop(client_message_key, None)
 
     def _candidate_log_is_up_to_date_locked(self, candidate_last_log_index: int, candidate_last_log_term: int) -> bool:
+        """
+        Compare a candidate's advertised log tip against the local log tip.
+
+        Inputs:
+        - `candidate_last_log_index`: candidate's last log index.
+        - `candidate_last_log_term`: candidate's last log term.
+
+        Output:
+        - Returns `True` when the candidate is at least as up to date as this
+          replica according to the Raft voting rule.
+
+        Called by:
+        - `handle_request_vote()` before deciding whether to grant a vote.
+        """
         local_last_log_term = self._last_log_term_locked()
         if candidate_last_log_term != local_last_log_term:
             return candidate_last_log_term > local_last_log_term
         return candidate_last_log_index >= self._last_log_index_locked()
 
     def _become_follower_locked(self, new_term: int, leader_address: str) -> None:
+        """
+        Transition this replica into follower mode for the given term.
+
+        Inputs:
+        - `new_term`: the newer term that should become current.
+        - `leader_address`: best known leader address for that term, or empty
+          string if unknown.
+
+        Output:
+        - No return value. The method resets vote state, updates role metadata,
+          and refreshes the election deadline.
+
+        Called by:
+        - `handle_request_vote()`, `handle_append_entries()`,
+          `_run_election_timer_loop()`, and `_run_one_replication_round()` when a
+          newer term is observed or leadership is relinquished.
+        """
+        previous_role_name = self.role_name
+        previous_term = self.current_term
         self.current_term = new_term
         self.role_name = FOLLOWER_ROLE_NAME
         self.voted_for_replica_id = None
         self.known_leader_address = leader_address
         self._reset_election_deadline_locked()
         self.state_changed.notify_all()
+        self._log(
+            f"became follower (from role={previous_role_name}, term={previous_term}) "
+            f"-> term={self.current_term}, leader_hint={leader_address or 'unknown'}"
+        )
 
     def _become_leader_locked(self) -> None:
+        """
+        Transition this candidate into leader mode and initialize peer tracking.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller must already hold
+          `self.state_lock`.
+
+        Output:
+        - No return value. The method updates role metadata and resets the
+          replication progress maps for each follower.
+
+        Called by:
+        - `_run_election_timer_loop()` after a candidate gathers a majority.
+        """
         self.role_name = LEADER_ROLE_NAME
         self.known_leader_address = self.listen_address
         next_index = self._last_log_index_locked() + 1
         self.next_index_by_peer_address = {peer_address: next_index for peer_address in self.peer_addresses}
         self.match_index_by_peer_address = {peer_address: 0 for peer_address in self.peer_addresses}
         self.state_changed.notify_all()
+        self._log(f"became leader for term {self.current_term}")
 
     def _last_log_index_locked(self) -> int:
+        """
+        Return the index of the last local log entry.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller is expected to already
+          hold `self.state_lock`.
+
+        Output:
+        - Returns the integer index from the tail `LogEntry`.
+
+        Called by:
+        - Many helper methods and RPC handlers that need the current log tip.
+        """
         return self.log_entries[-1].index
 
     def _last_log_term_locked(self) -> int:
+        """
+        Return the term of the last local log entry.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller is expected to already
+          hold `self.state_lock`.
+
+        Output:
+        - Returns the integer term from the tail `LogEntry`.
+
+        Called by:
+        - `build_status_response()`, `handle_request_vote()`,
+          `_run_election_timer_loop()`, and `_candidate_log_is_up_to_date_locked()`.
+        """
         return self.log_entries[-1].term
 
     def _majority_count(self) -> int:
+        """
+        Compute how many replicas are required for quorum in this cluster.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - Returns the integer majority threshold `(N // 2) + 1`.
+
+        Called by:
+        - `_run_election_timer_loop()` and `_advance_commit_index_locked()`.
+        """
         return (len(self.all_replica_addresses) // 2) + 1
 
     def _reset_election_deadline_locked(self) -> None:
+        """
+        Pick a new randomized election timeout deadline for this replica.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller is expected to already
+          hold `self.state_lock`.
+
+        Output:
+        - No return value. The method updates `self.election_deadline_monotonic`.
+
+        Called by:
+        - `__init__()`, `handle_request_vote()`, `handle_append_entries()`,
+          `_run_election_timer_loop()`, `_become_follower_locked()`, and
+          `exit_disabled_mode()`.
+        """
         self.election_deadline_monotonic = time.monotonic() + random.uniform(1.4, 2.3)
 
     def _raft_participation_is_paused_locked(self) -> bool:
+        """
+        Report whether the replica should temporarily refuse Raft participation.
+
+        Inputs:
+        - No explicit parameters beyond `self`. Caller is expected to already
+          hold `self.state_lock`.
+
+        Output:
+        - Returns `True` when the replica is administratively disabled or still
+          inside its post-restart catch-up delay.
+
+        Called by:
+        - RPC handlers and background loops before they vote, replicate, or
+          serve reads.
+        """
         return self.disabled_mode_enabled or time.monotonic() < self.rejoin_ready_time_monotonic
 
     def enter_disabled_mode(self) -> None:
+        """
+        Move the replica into administrative stop mode without killing the process.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No return value. The replica remains reachable for admin/status RPCs
+          but stops participating in Raft and read service.
+
+        Called by:
+        - `handle_set_replica_availability()`.
+        - The `SIGUSR1` signal handler installed in `main()`.
+        """
         with self.state_lock:
             self.disabled_mode_enabled = True
             self.role_name = FOLLOWER_ROLE_NAME
             self.known_leader_address = ""
             self.state_changed.notify_all()
+            self._log("entered administrative stop mode")
 
     def exit_disabled_mode(self) -> None:
+        """
+        Leave administrative stop mode and schedule a short catch-up delay.
+
+        Inputs:
+        - No explicit parameters beyond `self`.
+
+        Output:
+        - No return value. The replica becomes eligible to rejoin after the
+          delay stored in `self.rejoin_ready_time_monotonic`.
+
+        Called by:
+        - `handle_set_replica_availability()`.
+        - The `SIGUSR2` signal handler installed in `main()`.
+        """
         with self.state_lock:
             self.disabled_mode_enabled = False
             self.role_name = FOLLOWER_ROLE_NAME
@@ -620,9 +1109,37 @@ class ReplicaStateMachine:
             self.rejoin_ready_time_monotonic = time.monotonic() + 1.0
             self._reset_election_deadline_locked()
             self.state_changed.notify_all()
+            self._log("left administrative stop mode and will rejoin after catch-up delay")
+
+    def _log(self, message: str) -> None:
+        """
+        Emit one human-readable diagnostic line for manual runs.
+
+        Inputs:
+        - `message`: already formatted text describing the event.
+
+        Output:
+        - No return value. The method writes a prefixed line to `stderr`.
+
+        Called by:
+        - Most RPC handlers, background loops, and `main()` lifecycle events.
+        """
+        print(f"[replica {self.replica_id} @ {self.listen_address}] {message}", file=sys.stderr, flush=True)
 
     @staticmethod
     def _role_name_to_proto_enum(role_name: str) -> int:
+        """
+        Translate a local role string into the protobuf enum used by Status RPCs.
+
+        Inputs:
+        - `role_name`: one of the local role constants defined at module scope.
+
+        Output:
+        - Returns the corresponding `replica_admin_pb2` enum integer.
+
+        Called by:
+        - `build_status_response()` when constructing the public admin reply.
+        """
         if role_name == FOLLOWER_ROLE_NAME:
             return replica_admin_pb2.FOLLOWER
         if role_name == CANDIDATE_ROLE_NAME:
@@ -631,14 +1148,62 @@ class ReplicaStateMachine:
 
 
 class ReplicaAdminService(replica_admin_pb2_grpc.ReplicaAdminServicer):
+    """
+    Thin public gRPC service wrapper that exposes only the `Status` RPC.
+
+    The internal Raft RPCs are registered separately in `main()` using generic
+    handlers, because those RPCs exchange dataclass payloads rather than the
+    generated public admin messages.
+    """
+
     def __init__(self, replica_state_machine: ReplicaStateMachine):
+        """
+        Store the already-initialized replica state machine used by RPC methods.
+
+        Inputs:
+        - `replica_state_machine`: the local `ReplicaStateMachine` instance that
+          owns all replica behavior and state.
+
+        Output:
+        - No return value.
+
+        Called by:
+        - `main()` when wiring the gRPC server.
+        """
         self.replica_state_machine = replica_state_machine
 
     def Status(self, request, context):
+        """
+        Answer the public admin `Status` RPC with the latest replica snapshot.
+
+        Inputs:
+        - `request`: unused protobuf `StatusRequest`.
+        - `context`: gRPC RPC context provided by the server runtime.
+
+        Output:
+        - Returns `replica_admin_pb2.StatusResponse`.
+
+        Called by:
+        - External callers such as tests, cluster scripts, and gateway leader
+          discovery through the generated `ReplicaAdminStub`.
+        """
         return self.replica_state_machine.build_status_response()
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
+    """
+    Define the CLI accepted by the standalone replica process.
+
+    Inputs:
+    - No explicit Python arguments.
+
+    Output:
+    - Returns an `ArgumentParser` configured with host, port, replica-count, and
+      disabled-mode options.
+
+    Called by:
+    - `main()` before parsing process arguments.
+    """
     argument_parser = argparse.ArgumentParser(description="Run one Raft replica that also exposes the ReplicaAdmin Status RPC.")
     argument_parser.add_argument("--host", default="127.0.0.1")
     argument_parser.add_argument("--port", type=int, required=True)
@@ -649,6 +1214,20 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """
+    Start the replica process, register RPC handlers, and block until shutdown.
+
+    Inputs:
+    - No explicit Python arguments. The function reads CLI options via
+      `build_argument_parser().parse_args()`.
+
+    Output:
+    - Returns integer exit code `0` on a normal shutdown path. Startup binding
+      failures raise an exception instead.
+
+    Called by:
+    - The module-level `if __name__ == "__main__"` block.
+    """
     parsed_arguments = build_argument_parser().parse_args()
 
     replica_id = infer_replica_id_from_port(parsed_arguments.port, parsed_arguments.replica_start_port)
@@ -667,6 +1246,7 @@ def main() -> int:
         start_in_disabled_mode=parsed_arguments.disabled,
     )
     replica_state_machine.start_background_threads()
+    replica_state_machine._log(f"starting gRPC server on {bind_address}")
 
     signal.signal(signal.SIGUSR1, lambda signum, frame: replica_state_machine.enter_disabled_mode())
     signal.signal(signal.SIGUSR2, lambda signum, frame: replica_state_machine.exit_disabled_mode())
@@ -690,6 +1270,7 @@ def main() -> int:
             grpc_server.add_insecure_port(bind_address)
             grpc_server.start()
             last_bind_error = None
+            replica_state_machine._log("gRPC server is now listening")
             break
         except RuntimeError as bind_error:
             last_bind_error = bind_error
@@ -703,10 +1284,11 @@ def main() -> int:
     try:
         grpc_server.wait_for_termination()
     except KeyboardInterrupt:
-        pass
+        replica_state_machine._log("received KeyboardInterrupt, shutting down")
     finally:
         replica_state_machine.stop_background_threads()
         grpc_server.stop(grace=None)
+        replica_state_machine._log("server stopped")
 
     return 0
 
