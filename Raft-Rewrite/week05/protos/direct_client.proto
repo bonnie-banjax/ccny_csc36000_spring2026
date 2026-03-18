@@ -1,0 +1,33 @@
+syntax = "proto3";
+package direct;
+
+// SendDirectRequest/Response and DirectEvent are SHARED
+message SendDirectRequest {
+  string from_user = 1;
+  string to_user = 2;
+  string client_id = 3;
+  string client_msg_id = 4;
+  string text = 5;
+}
+
+message SendDirectResponse {
+  uint64 seq = 1;
+  int64 server_time_ms = 2;
+}
+
+message SubscribeConversationRequest {
+  string user_a = 1;
+  string user_b = 2;
+  uint64 after_seq = 3;
+}
+
+message DirectEvent {
+  uint64 seq = 1;
+  int64 server_time_ms = 2;
+  string user_a = 3;
+  string user_b = 4;
+  string from_user = 5;
+  string client_id = 6;
+  string client_msg_id = 7;
+  string text = 8;
+}
