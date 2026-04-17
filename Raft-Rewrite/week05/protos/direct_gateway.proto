@@ -1,0 +1,31 @@
+syntax = "proto3";
+package direct;
+
+// Import the base messages from the client proto
+import "direct_client.proto";
+
+service DirectGateway {
+  rpc SendDirect(SendDirectRequest) returns (SendDirectResponse);
+  rpc SubscribeConversation(SubscribeConversationRequest) returns (stream DirectEvent);
+  rpc GetConversationHistory(GetConversationHistoryRequest) returns (GetConversationHistoryResponse);
+}
+
+enum ReadPreference {
+  LEADER_ONLY = 0;
+  ANY_REPLICA = 1;
+  REPLICA_HINT = 2;
+}
+
+message GetConversationHistoryRequest {
+  string user_a = 1;
+  string user_b = 2;
+  uint64 after_seq = 3;
+  uint32 limit = 4;
+  ReadPreference read_pref = 5;
+  string replica_hint = 6;
+}
+
+message GetConversationHistoryResponse {
+  repeated DirectEvent events = 1;
+  repeated string served_by = 2;
+}
