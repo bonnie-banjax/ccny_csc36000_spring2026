@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -54,19 +56,48 @@ def cluster_ports(cluster_data: ClusterState) -> list[int]:
 def best_effort_stop_listening_ports(port_numbers: list[int]) -> None:
     discovered_pids: set[int] = set()
     for port_number in port_numbers:
+        if shutil.which("lsof"):
+            proc = subprocess.run(
+                ["lsof", "-t", f"-iTCP:{port_number}", "-sTCP:LISTEN"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            if proc.returncode in (0, 1):
+                for line in proc.stdout.splitlines():
+                    line = line.strip()
+                    if line.isdigit():
+                        discovered_pids.add(int(line))
+            continue
+
+        # Windows fallback: parse netstat output when lsof is unavailable.
         proc = subprocess.run(
-            ["lsof", "-t", f"-iTCP:{port_number}", "-sTCP:LISTEN"],
+            ["netstat", "-ano", "-p", "tcp"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=False,
         )
-        if proc.returncode not in (0, 1):
+        if proc.returncode != 0:
             continue
+        port_suffix = f":{port_number}"
         for line in proc.stdout.splitlines():
-            line = line.strip()
-            if line.isdigit():
-                discovered_pids.add(int(line))
+            normalized = line.strip()
+            if not normalized:
+                continue
+            upper = normalized.upper()
+            if "LISTENING" not in upper:
+                continue
+            parts = re.split(r"\s+", normalized)
+            if len(parts) < 5:
+                continue
+            local_addr = parts[1]
+            if not local_addr.endswith(port_suffix):
+                continue
+            pid = parts[-1]
+            if pid.isdigit():
+                discovered_pids.add(int(pid))
     for pid in sorted(discovered_pids):
         best_effort_stop_pid(pid)
 
