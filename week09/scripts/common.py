@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from week09_common import CLUSTER_JSON, RUNTIME_DIR, default_cluster, load_cluster_if_present, write_cluster
+from week09_common import CLUSTER_JSON, DATA_DIR, RUNTIME_DIR, default_cluster, load_cluster_if_present, write_cluster
 from week09_common import ClusterState
 
 
@@ -34,9 +34,29 @@ def best_effort_stop_pid(pid: Any) -> None:
         except OSError:
             return
         time.sleep(0.05)
+
+    # Windows process cleanup is more reliable via taskkill than SIGKILL.
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return
+
     try:
         os.kill(pid, signal.SIGKILL)
     except OSError:
+        pass
+
+
+def _rmtree_onerror(func, path, exc_info) -> None:
+    try:
+        os.chmod(path, 0o700)
+        func(path)
+    except Exception:
         pass
 
 
@@ -151,14 +171,24 @@ def load_or_default(host: str) -> ClusterState:
 
 
 def reset_cluster_state(host: str) -> ClusterState:
+    cluster_data = default_cluster(host=host)
+
     existing = load_cluster_if_present()
     if existing is not None:
         best_effort_stop_listening_ports(cluster_ports(existing))
         best_effort_stop_pid(existing.gateway.pid)
         for node_entry in existing.shard_nodes:
             best_effort_stop_pid(node_entry.pid)
-    cluster_data = default_cluster(host=host)
+
+    # Also stop any listeners on default cluster ports in case cluster.json
+    # is stale/missing but old processes are still alive.
     best_effort_stop_listening_ports(cluster_ports(cluster_data))
+
+    # A full cluster reset should start from empty durable shard files so
+    # repeated test runs do not reuse stale inventory/reservation state.
+    if DATA_DIR.exists():
+        shutil.rmtree(DATA_DIR, onerror=_rmtree_onerror)
+
     return cluster_data
 
 
