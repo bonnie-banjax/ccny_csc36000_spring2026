@@ -15,6 +15,3 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
-
-#Local tests
-test_sharding_local.py
