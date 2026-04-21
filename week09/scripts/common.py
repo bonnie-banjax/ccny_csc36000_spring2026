@@ -53,20 +53,48 @@ def cluster_ports(cluster_data: ClusterState) -> list[int]:
 
 def best_effort_stop_listening_ports(port_numbers: list[int]) -> None:
     discovered_pids: set[int] = set()
-    for port_number in port_numbers:
-        proc = subprocess.run(
-            ["lsof", "-t", f"-iTCP:{port_number}", "-sTCP:LISTEN"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if proc.returncode not in (0, 1):
-            continue
-        for line in proc.stdout.splitlines():
-            line = line.strip()
-            if line.isdigit():
-                discovered_pids.add(int(line))
+
+    if sys.platform.startswith("win"):
+        try:
+            proc = subprocess.run(
+                ["netstat", "-ano"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            return
+
+        for port_number in port_numbers:
+            target = f":{port_number}"
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if "LISTENING" in line and target in line:
+                    parts = line.split()
+                    if parts and parts[-1].isdigit():
+                        discovered_pids.add(int(parts[-1]))
+    else:
+        for port_number in port_numbers:
+            try:
+                proc = subprocess.run(
+                    ["lsof", "-t", f"-iTCP:{port_number}", "-sTCP:LISTEN"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                )
+            except FileNotFoundError:
+                return
+
+            if proc.returncode not in (0, 1):
+                continue
+
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    discovered_pids.add(int(line))
+
     for pid in sorted(discovered_pids):
         best_effort_stop_pid(pid)
 
