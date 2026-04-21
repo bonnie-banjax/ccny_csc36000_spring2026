@@ -27,77 +27,177 @@ class RouterView(Protocol):
       ...
 
 
+
+
 def execute_gateway_request(
-  application_name: str,
-  operation_name: str,
-  payload: dict[str, Any],
-  router: Any, # RouterView Protocol
-  transport: Any, # CoordinatorTransport Protocol
+    application_name: str,
+    operation_name: str,
+    payload: dict[str, Any],
+    router: RouterView,
+    transport: CoordinatorTransport,
 ) -> dict[str, Any]:
-  """
-  Orchestrates the transaction from the Gateway's perspective.
-  """
-  if application_name != "inventory":
-    raise NotImplementedError("Gateway currently only configured for inventory application.")
+    if application_name != "inventory":
+        raise NotImplementedError("Gateway currently only configured for inventory.")
 
-  # 1. Routing: Determine which shard to talk to
-  # We extract the item_id from the payload to find the partition key
-  try:
-    part_key = build_partition_key(application_name, operation_name, payload)
-    logical_shard_id = choose_logical_shard(part_key)
-  except (ValueError, KeyError) as e:
-    # If we can't find an item_id, we can't route the request
-    return {"ok": False, "error": f"Routing failed: {str(e)}"}
+    # 1. Routing
+    try:
+        logical_shard_id = router.logical_shard_for_payload(
+            application_name, operation_name, payload
+        )
+    except Exception as e:
+        # If routing fails, we want the client to see an error
+        raise RuntimeError(f"Routing failed: {e}")
 
-  # 2. Dispatch: Distinguish between Reads and Mutations
-  # Based on the Week09Gateway service definition in the .proto
-  mutation_ops = {"CreateInventoryItem", "ReserveItem", "ReleaseReservation"}
-  query_ops = {"GetInventory"}
+    # 2. Dispatch
+    mutation_ops = {"CreateInventoryItem", "ReserveItem", "ReleaseReservation"}
 
-  try:
     if operation_name in mutation_ops:
-      # Mutations go through apply_to_shard (ShardNode.Apply)
-      result = transport.apply_to_shard(
-        logical_shard_id=logical_shard_id,
-        operation_name=operation_name,
-        payload=payload
-      )
-    elif operation_name in query_ops:
-      # Queries go through read_from_shard (ShardNode.Read)
-      result = transport.read_from_shard(
-        logical_shard_id=logical_shard_id,
-        query_name=operation_name,
-        payload=payload
-      )
+        result = transport.apply_to_shard(logical_shard_id, operation_name, payload)
     else:
-      return {"ok": False, "error": f"Unknown operation: {operation_name}"}
+        result = transport.read_from_shard(logical_shard_id, operation_name, payload)
 
-    # 3. Post-Processing: Inject routing metadata for the client response
-    # The .proto messages (e.g., ReserveItemResponse) expect a 'served_by' list
+    # 3. Validation & Exception Raising
+    if not isinstance(result, dict):
+        raise RuntimeError("Shard returned invalid non-dict response")
+
+    # If the shard explicitly failed or refused to commit
+    if not result.get("ok", True) or (operation_name in mutation_ops and not result.get("committed", False)):
+        # RAISING here ensures the gRPC stub receives an error status
+        # and satisfies pytest.raises(Exception)
+        error_msg = result.get("error", f"{operation_name} failed to commit on shard {logical_shard_id}")
+        raise ValueError(error_msg)
+
+    # 4. Success Path: Metadata Injection
     shard_addr = router.owner_addr_for_logical_shard(logical_shard_id)
-    routing_info = {
-      "logical_shard_id": logical_shard_id,
-      "storage_addr": shard_addr
-    }
+    routing_info = {"logical_shard_id": logical_shard_id, "storage_addr": shard_addr}
 
-    # Ensure the response format matches what the Gateway RPC expects
-    # Note: transport calls usually return the 'result_json' parsed into a dict
-    if isinstance(result, dict):
-      # If the application response expects a list of RoutingInfo
-      if "served_by" not in result and operation_name != "CreateInventoryItem":
-         result["served_by"] = [routing_info]
-      # Create responses usually take a single RoutingInfo object
-      elif operation_name == "CreateInventoryItem":
-         result["routing"] = routing_info
+    if operation_name == "CreateInventoryItem":
+        result["routing"] = routing_info
+    else:
+        result["served_by"] = [routing_info]
 
-      return result
+    return result
 
-    return {"ok": False, "error": "Invalid response from shard"}
+# def execute_gateway_request(
+#     application_name: str,
+#     operation_name: str,
+#     payload: dict[str, Any],
+#     router: RouterView,
+#     transport: CoordinatorTransport,
+# ) -> dict[str, Any]:
+#     if application_name != "inventory":
+#         raise NotImplementedError("Only inventory supported.")
+#
+#     # 1. Routing
+#     try:
+#         logical_shard_id = router.logical_shard_for_payload(application_name, operation_name, payload)
+#     except Exception as e:
+#         return {"ok": False, "error": f"Routing failed: {str(e)}"}
+#
+#     # 2. Dispatch
+#     mutation_ops = {"CreateInventoryItem", "ReserveItem", "ReleaseReservation"}
+#
+#     try:
+#         if operation_name in mutation_ops:
+#             result = transport.apply_to_shard(logical_shard_id, operation_name, payload)
+#         else:
+#             result = transport.read_from_shard(logical_shard_id, operation_name, payload)
+#
+#         # --- THE CRITICAL LOGIC ADDITION ---
+#         # If the shard explicitly says 'committed': False,
+#         # we need to make sure the Gateway treats this as a failure
+#         # so that gRPC raises an Exception for the test to catch.
+#         if isinstance(result, dict):
+#             # If the shard says it's NOT OK, or it didn't commit a mutation
+#             if not result.get("ok", True) or (operation_name in mutation_ops and result.get("committed") is False):
+#                 # Triggering a non-OK status ensures the test's pytest.raises(Exception) works
+#                 return {"ok": False, "error": result.get("error", "Transaction failed to commit")}
+#         # -----------------------------------
+#
+#         # 3. Metadata Injection
+#         shard_addr = router.owner_addr_for_logical_shard(logical_shard_id)
+#         routing_info = {"logical_shard_id": logical_shard_id, "storage_addr": shard_addr}
+#
+#         if operation_name == "CreateInventoryItem":
+#             result["routing"] = routing_info
+#         else:
+#             result["served_by"] = [routing_info]
+#
+#         return result
+#
+#     except Exception as e:
+#         return {"ok": False, "error": str(e)}
 
-  except Exception as e:
-    # This catches network timeouts or Shard crashes
-    return {"ok": False, "error": f"Shard communication error: {str(e)}"}
-
+# def execute_gateway_request(
+#     application_name: str,
+#     operation_name: str,
+#     payload: dict[str, Any],
+#     router: RouterView,
+#     transport: CoordinatorTransport,
+# ) -> dict[str, Any]:
+#     """
+#     Orchestrates the transaction by routing to the correct shard using the router
+#     and dispatching via the transport.
+#     """
+#     if application_name != "inventory":
+#         raise NotImplementedError("Gateway currently only configured for inventory application.")
+#
+#     # 1. Routing: Use the router protocol to find the logical shard
+#     # This replaces the missing 'build_partition_key' / 'choose_logical_shard'
+#     try:
+#         logical_shard_id = router.logical_shard_for_payload(
+#             application_name, operation_name, payload
+#         )
+#     except Exception as e:
+#         return {"ok": False, "error": f"Routing failed: {str(e)}"}
+#
+#     # 2. Dispatch: Determine if this is a Mutation (Apply) or a Query (Read)
+#     mutation_ops = {"CreateInventoryItem", "ReserveItem", "ReleaseReservation"}
+#     query_ops = {"GetInventory"}
+#
+#     try:
+#         if operation_name in mutation_ops:
+#             result = transport.apply_to_shard(
+#                 logical_shard_id=logical_shard_id,
+#                 operation_name=operation_name,
+#                 payload=payload,
+#             )
+#         elif operation_name in query_ops:
+#             result = transport.read_from_shard(
+#                 logical_shard_id=logical_shard_id,
+#                 query_name=operation_name,
+#                 payload=payload,
+#             )
+#         else:
+#             return {"ok": False, "error": f"Unknown operation: {operation_name}"}
+#
+#         # 3. Response Formatting: Inject metadata required by the .proto responses
+#         # Shard address is often needed for the 'served_by' or 'routing' fields
+#         shard_addr = router.owner_addr_for_logical_shard(logical_shard_id)
+#         routing_info = {
+#             "logical_shard_id": logical_shard_id,
+#             "storage_addr": shard_addr,
+#         }
+#
+#         if isinstance(result, dict):
+#             # Check if the result was a failure from the shard itself
+#             if not result.get("ok", True):
+#                 return result
+#
+#             # Inject routing metadata based on the operation type
+#             if operation_name == "CreateInventoryItem":
+#                 result["routing"] = routing_info
+#             else:
+#                 # GetInventory, ReserveItem, and ReleaseReservation usually expect 'served_by'
+#                 result["served_by"] = [routing_info]
+#
+#             return result
+#
+#         return {"ok": False, "error": "Invalid response format from shard"}
+#
+#     except Exception as e:
+#         # This catches network issues or shard-level crashes
+#         return {"ok": False, "error": f"Gateway-to-Shard communication error: {str(e)}"}
 
 def apply_local_mutation(state: dict[str, Any], operation_name: str, payload: dict[str, Any]) -> dict[str, Any]:
   """
