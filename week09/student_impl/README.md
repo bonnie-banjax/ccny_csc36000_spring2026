@@ -1,18 +1,24 @@
 # Student Implementation README
 
-Replace this template with your team's implementation writeup.
+## Sharding Design
 
-Your writeup should include:
+### Partition Key
 
-- the selected application
-- the partition key and sharding strategy
-- how the shard mapping aims to keep keys reasonably evenly distributed
-- the declared sharding tradeoff from `project_choice.py`
-- whether transactions are single-shard or cross-shard
-- the declared isolation tradeoff from `project_choice.py`
-- how atomicity is achieved
-- how isolation is achieved
-- which anomalies your design prevents
-- how your transaction logic uses the provided storage layer
-- how crash recovery works
-- known limitations
+We selected `item_id` as the partition key for the inventory application.
+
+This choice was based on the workload characteristics:
+- All operations (create, reserve, release, get) are centered around a single item
+- Keeping all state for a given item on the same shard avoids the need for cross-shard transactions
+- This simplifies transaction execution and improves consistency
+
+---
+
+### Sharding Strategy
+
+We used a **hash-based sharding strategy** to map partition keys to logical shards.
+
+Implementation details:
+- The partition key (`item_id`) is hashed using SHA-256
+- The resulting hash value is converted to an integer
+- The shard is determined using modulo:
+  shard_id = hash(item_id) % total_logical_shards
