@@ -1,0 +1,10 @@
+{
+  "inventory": {
+    "item-1": {
+      "reservations": {
+        "r-1": 2
+      },
+      "total_quantity": 5
+    }
+  }
+}
