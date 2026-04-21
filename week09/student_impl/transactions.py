@@ -3,17 +3,23 @@ from __future__ import annotations
 import threading
 from typing import Any, Protocol
 
-
+# Global lock for each shard
+# Ensures only one mutation or read happens at a time (serializable behavior)
 SHARD_LOCK = threading.Lock()
 
 
 class CoordinatorTransport(Protocol):
+    """
+    Interface for communication between gateway and shard.
+    """
+
     def apply_to_shard(
         self,
         logical_shard_id: int,
         operation_name: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        # Used for mutations (writes)
         ...
 
     def read_from_shard(
@@ -22,19 +28,26 @@ class CoordinatorTransport(Protocol):
         query_name: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        # Used for queries (reads)
         ...
 
 
 class RouterView(Protocol):
+    """
+    Interface for routing logic (sharding).
+    """
+
     def logical_shard_for_payload(
         self,
         application_name: str,
         operation_name: str,
         payload: dict[str, Any],
     ) -> int:
+        # Determines which shard a request goes to
         ...
 
     def owner_addr_for_logical_shard(self, logical_shard_id: int) -> str:
+        # Returns physical address of shard
         ...
 
 
@@ -48,24 +61,30 @@ def execute_gateway_request(
     """
     Gateway-side request execution.
 
-    Important behavior:
-    - route inventory requests by item_id through the router
-    - let invalid operations raise exceptions instead of hiding them
+    Flow:
+    1. Determine shard using router
+    2. Forward request to shard
+    3. Attach routing metadata to response
     """
+
+    # Only inventory app is supported
     if application_name != "inventory":
         raise NotImplementedError(
             f"Gateway currently only supports inventory, got {application_name!r}"
         )
 
+    # Step 1: determine shard
     logical_shard_id = router.logical_shard_for_payload(
         application_name=application_name,
         operation_name=operation_name,
         payload=payload,
     )
 
+    # Define operation categories
     mutation_ops = {"create_item", "reserve_item", "release_reservation"}
     query_ops = {"get_inventory"}
 
+    # Step 2: forward request
     if operation_name in mutation_ops:
         result = transport.apply_to_shard(
             logical_shard_id=logical_shard_id,
@@ -81,16 +100,18 @@ def execute_gateway_request(
     else:
         raise ValueError(f"Unknown operation: {operation_name}")
 
+    # Validate shard response
     if not isinstance(result, dict):
         raise TypeError("Invalid response from shard")
 
+    # Step 3: attach routing metadata
     shard_addr = router.owner_addr_for_logical_shard(logical_shard_id)
     routing_info = {
         "logical_shard_id": logical_shard_id,
         "storage_addr": shard_addr,
     }
 
-    # Match gateway response expectations
+    # Format depends on operation type
     if operation_name == "create_item":
         result["routing"] = routing_info
     else:
@@ -105,20 +126,17 @@ def apply_local_mutation(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Shard-local mutation execution for inventory.
+    Executes mutations on a shard.
 
-    Isolation:
-      - one shard-local lock
-      - mutations execute one at a time
-
-    Atomicity:
-      - mutate loaded in-memory state
-      - shard server only persists after successful return
-      - if we raise, bad state is not saved
+    Guarantees:
+    - Serial execution using lock
+    - No partial writes (atomic behavior)
     """
+
     with SHARD_LOCK:
         inventory = state.setdefault("inventory", {})
 
+        # CREATE ITEM
         if operation_name == "create_item":
             item_id = payload["item_id"]
             quantity = int(payload["quantity"])
@@ -134,6 +152,7 @@ def apply_local_mutation(
                 "quantity": inventory[item_id]["total_quantity"],
             }
 
+        # RESERVE ITEM
         if operation_name == "reserve_item":
             item_id = payload["item_id"]
             reservation_id = payload["reservation_id"]
@@ -144,8 +163,7 @@ def apply_local_mutation(
 
             item = inventory[item_id]
 
-            # Optional retry-safe behavior: duplicate reservation id is treated
-            # as already committed rather than double-applying.
+            # Idempotency: duplicate reservation doesn't double count
             if reservation_id in item["reservations"]:
                 reserved_quantity = sum(item["reservations"].values())
                 remaining_quantity = item["total_quantity"] - reserved_quantity
@@ -157,6 +175,7 @@ def apply_local_mutation(
             reserved_quantity = sum(item["reservations"].values())
             available_quantity = item["total_quantity"] - reserved_quantity
 
+            # Prevent over-allocation
             if requested_quantity > available_quantity:
                 raise ValueError("Insufficient inventory available")
 
@@ -167,6 +186,7 @@ def apply_local_mutation(
                 "remaining_quantity": available_quantity - requested_quantity,
             }
 
+        # RELEASE RESERVATION
         if operation_name == "release_reservation":
             item_id = payload["item_id"]
             reservation_id = payload["reservation_id"]
@@ -200,9 +220,11 @@ def run_local_query(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Shard-local read execution for inventory.
-    We use the same lock so reads do not observe half-finished updates.
+    Executes read queries on a shard.
+
+    Uses same lock to ensure consistent reads.
     """
+
     with SHARD_LOCK:
         inventory = state.get("inventory", {})
 
@@ -213,6 +235,7 @@ def run_local_query(
                 raise ValueError(f"Item {item_id} not found")
 
             item = inventory[item_id]
+
             total_quantity = item["total_quantity"]
             reserved_quantity = sum(item["reservations"].values())
             available_quantity = total_quantity - reserved_quantity
