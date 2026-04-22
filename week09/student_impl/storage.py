@@ -32,10 +32,10 @@ def save_logical_shard_state(storage_path: Path, state: dict[str, Any]) -> None:
     with temporary_path.open("w") as tmp_handle:
         tmp_handle.write(serialized_state)
         tmp_handle.flush()
-        os.fsync(tmp_handle.fileno())
+        os.fsync(tmp_handle.fileno())  # Guarantee bytes reach physical disk before rename
     for attempt in range(8):
         try:
-            os.replace(temporary_path, storage_path)
+            os.replace(temporary_path, storage_path)  # Atomic: old file replaced or untouched
             return
         except PermissionError:
             # Windows can transiently hold a lock on the destination file.
