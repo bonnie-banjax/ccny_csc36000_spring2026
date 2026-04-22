@@ -33,7 +33,8 @@ class StudentShardStoreAdapter:
 
     def _load_state(self, logical_shard_id: int) -> dict[str, Any]:
         storage_path = self._storage_path(logical_shard_id)
-        # Keep shard bootstrap semantics centralized in student_storage.
+        if not storage_path.exists():
+            return {}
         return student_storage.load_logical_shard_state(storage_path)
 
     def _save_state(self, logical_shard_id: int, state: dict[str, Any]) -> None:

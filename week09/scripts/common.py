@@ -67,11 +67,11 @@ def best_effort_stop_listening_ports(port_numbers: list[int]) -> None:
             return
 
         for port_number in port_numbers:
-            target_suffix = f":{port_number}"
+            target = f":{port_number}"
             for line in proc.stdout.splitlines():
-                stripped_line = line.strip()
-                if "LISTENING" in stripped_line and target_suffix in stripped_line:
-                    parts = stripped_line.split()
+                line = line.strip()
+                if "LISTENING" in line and target in line:
+                    parts = line.split()
                     if parts and parts[-1].isdigit():
                         discovered_pids.add(int(parts[-1]))
     else:
