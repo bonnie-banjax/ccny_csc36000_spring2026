@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Transaction Docs</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <script
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
+  type="text/javascript"></script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Transaction Docs</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#transaction-docs" id="toc-transaction-docs">TRANSACTION
+DOCS</a>
+<ul>
+<li><a href="#schema-design-data-model-example"
+id="toc-schema-design-data-model-example">1. Schema Design / Data Model
+Example</a>
+<ul>
+<li><a href="#overview"
+id="toc-overview"><strong>Overview</strong></a></li>
+<li><a href="#code-logic-analysis"
+id="toc-code-logic-analysis"><strong>Code Logic
+Analysis</strong></a></li>
+<li><a href="#missing-dependencies-context"
+id="toc-missing-dependencies-context"><strong>Missing Dependencies &amp;
+Context</strong></a></li>
+<li><a href="#implementation-considerations"
+id="toc-implementation-considerations"><strong>Implementation
+Considerations</strong></a></li>
+</ul></li>
+<li><a href="#shard-state-persistence-lifecycle-management"
+id="toc-shard-state-persistence-lifecycle-management">2. Shard State
+Persistence &amp; Lifecycle Management</a>
+<ul>
+<li><a href="#overview-1"
+id="toc-overview-1"><strong>Overview</strong></a></li>
+<li><a href="#code-logic-analysis-1"
+id="toc-code-logic-analysis-1"><strong>Code Logic
+Analysis</strong></a></li>
+<li><a href="#missing-dependencies-context-1"
+id="toc-missing-dependencies-context-1"><strong>Missing Dependencies
+&amp; Context</strong></a></li>
+<li><a href="#implementation-considerations-1"
+id="toc-implementation-considerations-1"><strong>Implementation
+Considerations</strong></a></li>
+</ul></li>
+<li><a href="#intra-shard-concurrency-control-local-mutation-logic"
+id="toc-intra-shard-concurrency-control-local-mutation-logic">3.
+Intra-Shard Concurrency Control &amp; Local Mutation Logic</a>
+<ul>
+<li><a href="#overview-2"
+id="toc-overview-2"><strong>Overview</strong></a></li>
+<li><a href="#code-logic-analysis-2"
+id="toc-code-logic-analysis-2"><strong>Code Logic
+Analysis</strong></a></li>
+<li><a href="#missing-dependencies-context-2"
+id="toc-missing-dependencies-context-2"><strong>Missing Dependencies
+&amp; Context</strong></a></li>
+<li><a href="#implementation-considerations-2"
+id="toc-implementation-considerations-2"><strong>Implementation
+Considerations</strong></a></li>
+</ul></li>
+<li><a href="#distributed-request-orchestrator-shard-router"
+id="toc-distributed-request-orchestrator-shard-router">4. Distributed
+Request Orchestrator &amp; Shard Router</a>
+<ul>
+<li><a href="#overview-3"
+id="toc-overview-3"><strong>Overview</strong></a></li>
+<li><a href="#code-logic-analysis-3"
+id="toc-code-logic-analysis-3"><strong>Code Logic
+Analysis</strong></a></li>
+<li><a href="#missing-dependencies-context-3"
+id="toc-missing-dependencies-context-3"><strong>Missing Dependencies
+&amp; Context</strong></a></li>
+<li><a href="#implementation-considerations-3"
+id="toc-implementation-considerations-3"><strong>Implementation
+Considerations</strong></a></li>
+</ul></li>
+<li><a href="#multi-shard-node-controller-recovery-engine"
+id="toc-multi-shard-node-controller-recovery-engine">5. Multi-Shard Node
+Controller &amp; Recovery Engine</a>
+<ul>
+<li><a href="#overview-4"
+id="toc-overview-4"><strong>Overview</strong></a></li>
+<li><a href="#code-logic-analysis-4"
+id="toc-code-logic-analysis-4"><strong>Code Logic
+Analysis</strong></a></li>
+<li><a href="#missing-dependencies-context-4"
+id="toc-missing-dependencies-context-4"><strong>Missing Dependencies
+&amp; Context</strong></a></li>
+<li><a href="#implementation-considerations-4"
+id="toc-implementation-considerations-4"><strong>Implementation
+Considerations</strong></a></li>
+</ul></li>
+</ul></li>
+<li><a href="#end" id="toc-end">END</a></li>
+</ul>
+</nav>
+<h1 id="transaction-docs">TRANSACTION DOCS</h1>
+<!--|======[1]======[2]======[3]======[>X<]======[5]======[6]======[7]======|-->
+<h2 id="schema-design-data-model-example">1. Schema Design / Data Model
+Example</h2>
+<h3 id="overview"><strong>Overview</strong></h3>
+<p>The system utilizes a <strong>document-oriented state model</strong>
+structured as a nested JSON dictionary. This model is designed
+specifically for <strong>Application C (Inventory)</strong>, where the
+primary objective is to manage a finite resource
+(<code>total_quantity</code>) against multiple concurrent claims
+(<code>reservations</code>).</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;inventory&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;item-123&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;total_quantity&quot;</span><span class="fu">:</span> <span class="dv">10</span><span class="fu">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;reservations&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;res-abc&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;res-def&quot;</span><span class="fu">:</span> <span class="dv">1</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="code-logic-analysis"><strong>Code Logic Analysis</strong></h3>
+<p>The state is partitioned at the top level by a functional domain key
+(<code>"inventory"</code>). Each entry within this domain is keyed by a
+unique <code>item_id</code>. *
+<strong><code>total_quantity</code></strong>: An integer representing
+the authoritative supply. * <strong><code>reservations</code></strong>:
+A sub-dictionary mapping a <code>reservation_id</code> to a specific
+<code>quantity</code>.</p>
+<p>This structure allows the system to calculate the “available” balance
+dynamically: <span class="math display">\[\text{Available} =
+\text{total\_quantity} - \sum(\text{reservations.values()})\]</span></p>
+<h3 id="missing-dependencies-context"><strong>Missing Dependencies &amp;
+Context</strong></h3>
+<p>While the snippet provides a clear example, the following elements
+are necessary for full integration: 1. <strong>Schema
+Validation</strong>: There is no logic presented to enforce that
+<code>total_quantity</code> remains a non-negative integer or to prevent
+the injection of malformed keys outside of the <code>"inventory"</code>
+block. 2. <strong>Versioning/Sequence Numbers</strong>: The model lacks
+a <code>version</code> or <code>last_modified_index</code> field.
+Without this, the system cannot easily implement Optimistic Concurrency
+Control (OCC) or verify if the in-memory state is ahead of the disk
+state during a race condition.</p>
+<h3 id="implementation-considerations"><strong>Implementation
+Considerations</strong></h3>
+<ul>
+<li><strong>Atomicity of Nested Updates</strong>: Because the entire
+item object (including all its reservations) is stored under a single
+key, any update to a reservation requires a rewrite of the entire item
+entry. This is efficient for small numbers of reservations but may lead
+to performance degradation if an item has thousands of active
+reservations (a “hot key” scenario).</li>
+<li><strong>Idempotency Support</strong>: By using a dictionary for
+<code>reservations</code> where the key is a unique ID provided by the
+client, the model inherently supports idempotency. If a client retries a
+<code>ReserveItem</code> request with the same <code>res-abc</code>, the
+system can detect the existing entry rather than double-counting the
+reservation.</li>
+<li><strong>Memory Efficiency</strong>: The model assumes the entire
+shard state fits in memory. For a large-scale inventory, a more granular
+approach (splitting reservations into separate keys) might be required
+to avoid high memory overhead during serialization.</li>
+</ul>
+<!--|======[1]======[2]======[3]======[>X<]======[5]======[6]======[7]======|-->
+<h2 id="shard-state-persistence-lifecycle-management">2. Shard State
+Persistence &amp; Lifecycle Management</h2>
+<h3 id="overview-1"><strong>Overview</strong></h3>
+<p>The <code>ShardPersistenceManager</code> acts as the intermediary
+between the system’s in-memory “source of truth” and the provided
+<code>student_impl.storage</code> API. Its primary role is to abstract
+the serialization of the inventory schema and ensure that each logical
+shard starts from a consistent, valid state, whether it is a fresh
+initialization or a recovery from a crash.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co"># student_impl/storage_helpers.py (Internal helper for Stage 1)</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> __future__ <span class="im">import</span> annotations</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Any</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> student_impl.storage <span class="im">import</span> load_logical_shard_state, save_logical_shard_state</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> get_empty_shard_state() <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, Any]:</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">&quot;&quot;&quot;Returns a fresh schema for a new logical shard.&quot;&quot;&quot;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> {</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;inventory&quot;</span>: {} <span class="co"># item_id -&gt; {total_quantity, reservations: {res_id -&gt; qty}}</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ShardPersistenceManager:</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>  <span class="co">&quot;&quot;&quot;Manages the lifecycle of a single logical shard&#39;s durable data.&quot;&quot;&quot;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, storage_path: Path):</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.storage_path <span class="op">=</span> storage_path</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>._state <span class="op">=</span> <span class="va">self</span>.load()</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> load(<span class="va">self</span>) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, Any]:</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="co">&quot;&quot;&quot;Loads state from disk or initializes if empty.&quot;&quot;&quot;</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    state <span class="op">=</span> load_logical_shard_state(<span class="va">self</span>.storage_path)</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> state:</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> get_empty_shard_state()</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Ensure the expected top-level key exists</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="st">&quot;inventory&quot;</span> <span class="kw">not</span> <span class="kw">in</span> state:</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>      state[<span class="st">&quot;inventory&quot;</span>] <span class="op">=</span> {}</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> state</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> save(<span class="va">self</span>, state: <span class="bu">dict</span>[<span class="bu">str</span>, Any]) <span class="op">-&gt;</span> <span class="va">None</span>:</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="co">&quot;&quot;&quot;Flushes the entire state to disk safely.&quot;&quot;&quot;</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    save_logical_shard_state(<span class="va">self</span>.storage_path, state)</span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>._state <span class="op">=</span> state</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>  <span class="at">@property</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> state(<span class="va">self</span>) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, Any]:</span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="va">self</span>._state</span></code></pre></div>
+<h3 id="code-logic-analysis-1"><strong>Code Logic Analysis</strong></h3>
+<ul>
+<li><strong>Initialization &amp; Recovery</strong>: The
+<code>load()</code> method implements a “lazy initialization” pattern.
+It attempts to fetch state from disk using the required
+<code>load_logical_shard_state</code> function. If the disk is empty
+(returning <code>None</code>), it invokes
+<code>get_empty_shard_state()</code> to generate a schema-compliant
+dictionary.</li>
+<li><strong>Schema Enforcement</strong>: It performs a basic structural
+check during loading (<code>if "inventory" not in state</code>) to
+ensure that even if the disk contains a valid JSON object, it conforms
+to the specific expected application namespace.</li>
+<li><strong>State Encapsulation</strong>: By maintaining an internal
+<code>_state</code> property, the manager provides a consistent handle
+for the Shard Node to interact with, acting as the bridge between the
+logic layer and the physical I/O layer.</li>
+</ul>
+<h3 id="missing-dependencies-context-1"><strong>Missing Dependencies
+&amp; Context</strong></h3>
+<ol type="1">
+<li><strong>Atomic Write-Behind</strong>: The <code>save()</code> method
+calls <code>save_logical_shard_state</code>, but it does not implement
+any “temp-file and rename” logic or checksumming. It relies entirely on
+the provided storage layer to ensure that the file is not corrupted if
+the process crashes mid-write.</li>
+<li><strong>Concurrency at the Persistence Layer</strong>: While the
+manager stores the state, it does not manage file-level locks. If two
+different managers were pointed at the same <code>storage_path</code>,
+they would overwrite each other’s data (though the
+<code>ShardNodeManager</code> in later snippets aims to prevent this by
+assigning unique paths).</li>
+<li><strong>The <code>Path</code> Provider</strong>: The snippet assumes
+a <code>storage_path</code> is passed in, but the logic for determining
+<em>where</em> these files live (the directory hierarchy) is handled by
+the broader system configuration.</li>
+</ol>
+<h3 id="implementation-considerations-1"><strong>Implementation
+Considerations</strong></h3>
+<ul>
+<li><strong>Write Amplification</strong>: This manager flushes the
+<em>entire</em> shard state to disk for every mutation. In a production
+environment with many items, this is inefficient. However, for the
+project’s “MVP” requirements, it is a robust way to guarantee that the
+<code>inventory</code> and <code>reservations</code> are committed
+together as a single atomic unit.</li>
+<li><strong>Recovery Reliability</strong>: This component is the
+backbone of the “Failure Handling” requirement. On restart, the
+<code>load()</code> method ensures that the node can resume exactly
+where it left off, effectively “shrinking” the window of potential data
+loss to the time between a successful mutation and the completion of the
+<code>save()</code> call.</li>
+</ul>
+<hr />
+<!--|======[1]======[2]======[3]======[>X<]======[5]======[6]======[7]======|-->
+<h2 id="intra-shard-concurrency-control-local-mutation-logic">3.
+Intra-Shard Concurrency Control &amp; Local Mutation Logic</h2>
+<h3 id="overview-2"><strong>Overview</strong></h3>
+<p>This component provides the core <strong>Concurrency Control</strong>
+and <strong>Transactional Safety</strong> for the shard. It implements
+the “Per-shard serial execution” strategy mentioned in the Project
+Brief. By wrapping all data access in a mutex, it ensures
+<strong>Serializable Isolation</strong>—the highest level of
+isolation—preventing anomalies like lost updates or inconsistent reads
+within the context of a single logical shard.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> threading</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Any</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> student_impl.storage <span class="im">import</span> save_logical_shard_state</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co"># A global lock or a per-shard lock registry is needed. </span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co"># For the MVP, a simple lock ensures serializable isolation within the process.</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>SHARD_LOCK <span class="op">=</span> threading.Lock()</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> apply_local_mutation(state: <span class="bu">dict</span>[<span class="bu">str</span>, Any], operation_name: <span class="bu">str</span>, payload: <span class="bu">dict</span>[<span class="bu">str</span>, Any]) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, Any]:</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">&quot;&quot;&quot;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co">  Executes inventory mutations with strict serializable isolation.</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">  Expected to be called by the ShardNode implementation.</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co">  &quot;&quot;&quot;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Ensure only one mutation happens at a time on this shard</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>  <span class="cf">with</span> SHARD_LOCK:</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    inventory <span class="op">=</span> state.setdefault(<span class="st">&quot;inventory&quot;</span>, {})</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> operation_name <span class="op">==</span> <span class="st">&quot;CreateInventoryItem&quot;</span>:</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>      item_id <span class="op">=</span> payload[<span class="st">&quot;item_id&quot;</span>]</span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>      quantity <span class="op">=</span> payload[<span class="st">&quot;quantity&quot;</span>]</span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Idempotency: if it exists, we just return the current state</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> item_id <span class="kw">not</span> <span class="kw">in</span> inventory:</span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        inventory[item_id] <span class="op">=</span> {</span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>          <span class="st">&quot;total_quantity&quot;</span>: quantity,</span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>          <span class="st">&quot;reservations&quot;</span>: {}</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> {<span class="st">&quot;item_id&quot;</span>: item_id, <span class="st">&quot;quantity&quot;</span>: inventory[item_id][<span class="st">&quot;total_quantity&quot;</span>]}</span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">elif</span> operation_name <span class="op">==</span> <span class="st">&quot;ReserveItem&quot;</span>:</span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>      item_id <span class="op">=</span> payload[<span class="st">&quot;item_id&quot;</span>]</span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>      res_id <span class="op">=</span> payload[<span class="st">&quot;reservation_id&quot;</span>]</span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>      req_qty <span class="op">=</span> payload[<span class="st">&quot;quantity&quot;</span>]</span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> item_id <span class="kw">not</span> <span class="kw">in</span> inventory:</span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f&quot;Item </span><span class="sc">{</span>item_id<span class="sc">}</span><span class="ss"> not found&quot;</span>)</span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>      item <span class="op">=</span> inventory[item_id]</span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Idempotency check: is this reservation already recorded?</span></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> res_id <span class="kw">in</span> item[<span class="st">&quot;reservations&quot;</span>]:</span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>        <span class="co"># If it already exists, we treat it as a success (idempotent)</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a>        current_reserved <span class="op">=</span> <span class="bu">sum</span>(item[<span class="st">&quot;reservations&quot;</span>].values())</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> {<span class="st">&quot;committed&quot;</span>: <span class="va">True</span>, <span class="st">&quot;remaining_quantity&quot;</span>: item[<span class="st">&quot;total_quantity&quot;</span>] <span class="op">-</span> current_reserved}</span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Safety Check: Invariant enforcement</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>      current_reserved <span class="op">=</span> <span class="bu">sum</span>(item[<span class="st">&quot;reservations&quot;</span>].values())</span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>      available <span class="op">=</span> item[<span class="st">&quot;total_quantity&quot;</span>] <span class="op">-</span> current_reserved</span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> req_qty <span class="op">&gt;</span> available:</span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>        <span class="co"># This triggers an exception that the ShardNode should catch and return in ApplyResponse.error</span></span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="st">&quot;Insufficient inventory available&quot;</span>)</span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Mutation</span></span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>      item[<span class="st">&quot;reservations&quot;</span>][res_id] <span class="op">=</span> req_qty</span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>      <span class="co"># THE FLUSH: We do not return until the change is durable.</span></span>
+<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a>      <span class="co"># </span><span class="al">TODO</span><span class="co"> In a real impl, the storage_path would be passed or known by the shard context.</span></span>
+<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Assuming the Shard Server handles the save() call immediately after this returns.</span></span>
+<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> {<span class="st">&quot;committed&quot;</span>: <span class="va">True</span>, <span class="st">&quot;remaining_quantity&quot;</span>: available <span class="op">-</span> req_qty}</span>
+<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">elif</span> operation_name <span class="op">==</span> <span class="st">&quot;ReleaseReservation&quot;</span>:</span>
+<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a>      item_id <span class="op">=</span> payload[<span class="st">&quot;item_id&quot;</span>]</span>
+<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a>      res_id <span class="op">=</span> payload[<span class="st">&quot;reservation_id&quot;</span>]</span>
+<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> item_id <span class="kw">not</span> <span class="kw">in</span> inventory <span class="kw">or</span> res_id <span class="kw">not</span> <span class="kw">in</span> inventory[item_id][<span class="st">&quot;reservations&quot;</span>]:</span>
+<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f&quot;Reservation </span><span class="sc">{</span>res_id<span class="sc">}</span><span class="ss"> not found for item </span><span class="sc">{</span>item_id<span class="sc">}</span><span class="ss">&quot;</span>)</span>
+<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a>      item <span class="op">=</span> inventory[item_id]</span>
+<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a>      <span class="kw">del</span> item[<span class="st">&quot;reservations&quot;</span>][res_id]</span>
+<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a>      new_available <span class="op">=</span> item[<span class="st">&quot;total_quantity&quot;</span>] <span class="op">-</span> <span class="bu">sum</span>(item[<span class="st">&quot;reservations&quot;</span>].values())</span>
+<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> {<span class="st">&quot;committed&quot;</span>: <span class="va">True</span>, <span class="st">&quot;remaining_quantity&quot;</span>: new_available}</span>
+<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span>:</span>
+<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a>      <span class="cf">raise</span> <span class="pp">NotImplementedError</span>(<span class="ss">f&quot;Unknown mutation: </span><span class="sc">{</span>operation_name<span class="sc">}</span><span class="ss">&quot;</span>)</span>
+<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_local_query(state: <span class="bu">dict</span>[<span class="bu">str</span>, Any], query_name: <span class="bu">str</span>, payload: <span class="bu">dict</span>[<span class="bu">str</span>, Any]) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, Any]:</span>
+<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a>  <span class="co">&quot;&quot;&quot;Reads state. Since it&#39;s a dict, we still use the lock to prevent reading mid-mutation.&quot;&quot;&quot;</span></span>
+<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a>  <span class="cf">with</span> SHARD_LOCK:</span>
+<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a>    inventory <span class="op">=</span> state.get(<span class="st">&quot;inventory&quot;</span>, {})</span>
+<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> query_name <span class="op">==</span> <span class="st">&quot;GetInventory&quot;</span>:</span>
+<span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a>      item_id <span class="op">=</span> payload[<span class="st">&quot;item_id&quot;</span>]</span>
+<span id="cb3-85"><a href="#cb3-85" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> item_id <span class="kw">not</span> <span class="kw">in</span> inventory:</span>
+<span id="cb3-86"><a href="#cb3-86" aria-hidden="true" tabindex="-1"></a>        <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f&quot;Item </span><span class="sc">{</span>item_id<span class="sc">}</span><span class="ss"> not found&quot;</span>)</span>
+<span id="cb3-87"><a href="#cb3-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-88"><a href="#cb3-88" aria-hidden="true" tabindex="-1"></a>      item <span class="op">=</span> inventory[item_id]</span>
+<span id="cb3-89"><a href="#cb3-89" aria-hidden="true" tabindex="-1"></a>      total <span class="op">=</span> item[<span class="st">&quot;total_quantity&quot;</span>]</span>
+<span id="cb3-90"><a href="#cb3-90" aria-hidden="true" tabindex="-1"></a>      reserved <span class="op">=</span> <span class="bu">sum</span>(item[<span class="st">&quot;reservations&quot;</span>].values())</span>
+<span id="cb3-91"><a href="#cb3-91" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> {</span>
+<span id="cb3-92"><a href="#cb3-92" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;item_id&quot;</span>: item_id,</span>
+<span id="cb3-93"><a href="#cb3-93" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;total_quantity&quot;</span>: total,</span>
+<span id="cb3-94"><a href="#cb3-94" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;reserved_quantity&quot;</span>: reserved,</span>
+<span id="cb3-95"><a href="#cb3-95" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;available_quantity&quot;</span>: total <span class="op">-</span> reserved</span>
+<span id="cb3-96"><a href="#cb3-96" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb3-97"><a href="#cb3-97" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">NotImplementedError</span>(<span class="ss">f&quot;Unknown query: </span><span class="sc">{</span>query_name<span class="sc">}</span><span class="ss">&quot;</span>)</span></code></pre></div>
+<h3 id="code-logic-analysis-2"><strong>Code Logic Analysis</strong></h3>
+<ul>
+<li><strong>The Mutex (<code>SHARD_LOCK</code>)</strong>: A global
+<code>threading.Lock()</code> (which should be scoped per-shard in a
+multi-shard environment) acts as a monitor. No two operations can
+execute <code>apply_local_mutation</code> or
+<code>run_local_query</code> simultaneously, effectively serializing the
+request stream.</li>
+<li><strong>Guard-Based Mutation</strong>: The <code>ReserveItem</code>
+operation demonstrates a rigorous check-before-act pattern:
+<ol type="1">
+<li><strong>Existence Check</strong>: Validates the
+<code>item_id</code>.</li>
+<li><strong>Idempotency Check</strong>: Uses the
+<code>reservation_id</code> to ensure a re-sent request doesn’t
+double-reserve—crucial for handling the “Client retries” mentioned in
+the Failure Model.</li>
+<li><strong>Invariant Guard</strong>: Sums existing reservations to
+ensure the new request does not exceed <code>total_quantity</code>.</li>
+</ol></li>
+<li><strong>Atomic State Transition</strong>: Because the mutation
+happens in-memory within the lock’s scope, the transition from
+“Available” to “Reserved” is atomic to any concurrent observer.</li>
+</ul>
+<h3 id="missing-dependencies-context-2"><strong>Missing Dependencies
+&amp; Context</strong></h3>
+<ol type="1">
+<li><strong>Scope of <code>SHARD_LOCK</code></strong>: In the snippet,
+<code>SHARD_LOCK</code> is a single global instance. In a real
+implementation of <code>ShardNodeManager</code>, there should be a
+unique lock per <code>logical_shard_id</code> to allow parallel
+processing across different shards hosted on the same physical
+node.</li>
+<li><strong>Explicit Durability Trigger</strong>: The snippet notes a
+<code>TODO</code> for the flush. While the logic modifies the
+<code>state</code> dict, the actual write to disk (the “Commit”) is not
+triggered inside this function, creating a dependency on the caller (the
+<code>ShardNode</code>) to execute the <code>save()</code> call
+immediately before releasing the lock.</li>
+<li><strong>Exception Mapping</strong>: The use of
+<code>ValueError</code> is internal. These must be caught and translated
+into the specific error codes required by the project’s
+<code>.proto</code> or RPC contracts.</li>
+</ol>
+<h3 id="implementation-considerations-2"><strong>Implementation
+Considerations</strong></h3>
+<ul>
+<li><strong>Performance Bottleneck</strong>: Serial execution is simple
+and correct but limits throughput to the speed of a single thread and
+the underlying disk I/O. For high-contention items, this shard will
+become a “Hot Shard.”</li>
+<li><strong>Read Isolation</strong>: By including
+<code>run_local_query</code> under the lock, the system prevents
+<strong>Dirty Reads</strong>. A client cannot query the inventory while
+a reservation is halfway through being processed.</li>
+</ul>
+<hr />
+<!--|======[1]======[2]======[3]======[>X<]======[5]======[6]======[7]======|-->
+<h2 id="distributed-request-orchestrator-shard-router">4. Distributed
+Request Orchestrator &amp; Shard Router</h2>
+<h3 id="overview-3"><strong>Overview</strong></h3>
+<p>The <code>execute_gateway_request</code> function serves as the
+<strong>Transaction Coordinator</strong> and <strong>Routing
+Engine</strong>. It acts as the “brain” of the gateway, abstracting the
+complexity of the distributed shard layout from the application client.
+Its primary responsibility is to resolve a high-level application
+request into a specific network call to the correct shard.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> typing <span class="im">import</span> Any</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> student_impl.sharding <span class="im">import</span> build_partition_key, choose_logical_shard</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> execute_gateway_request(</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  application_name: <span class="bu">str</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  operation_name: <span class="bu">str</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  payload: <span class="bu">dict</span>[<span class="bu">str</span>, Any],</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  router: Any, <span class="co"># RouterView Protocol</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  transport: Any, <span class="co"># CoordinatorTransport Protocol</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, Any]:</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">&quot;&quot;&quot;</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co">  Orchestrates the transaction from the Gateway&#39;s perspective.</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="co">  &quot;&quot;&quot;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> application_name <span class="op">!=</span> <span class="st">&quot;inventory&quot;</span>:</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">NotImplementedError</span>(<span class="st">&quot;Gateway currently only configured for inventory application.&quot;</span>)</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>  <span class="co"># 1. Routing: Determine which shard to talk to</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>  <span class="co"># We extract the item_id from the payload to find the partition key</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">try</span>:</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    part_key <span class="op">=</span> build_partition_key(application_name, operation_name, payload)</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    logical_shard_id <span class="op">=</span> choose_logical_shard(part_key)</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="cf">except</span> (<span class="pp">ValueError</span>, <span class="pp">KeyError</span>) <span class="im">as</span> e:</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># If we can&#39;t find an item_id, we can&#39;t route the request</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">&quot;ok&quot;</span>: <span class="va">False</span>, <span class="st">&quot;error&quot;</span>: <span class="ss">f&quot;Routing failed: </span><span class="sc">{</span><span class="bu">str</span>(e)<span class="sc">}</span><span class="ss">&quot;</span>}</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>  <span class="co"># 2. Dispatch: Distinguish between Reads and Mutations</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Based on the Week09Gateway service definition in the .proto</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>  mutation_ops <span class="op">=</span> {<span class="st">&quot;CreateInventoryItem&quot;</span>, <span class="st">&quot;ReserveItem&quot;</span>, <span class="st">&quot;ReleaseReservation&quot;</span>}</span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  query_ops <span class="op">=</span> {<span class="st">&quot;GetInventory&quot;</span>}</span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>  <span class="cf">try</span>:</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> operation_name <span class="kw">in</span> mutation_ops:</span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Mutations go through apply_to_shard (ShardNode.Apply)</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>      result <span class="op">=</span> transport.apply_to_shard(</span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>        logical_shard_id<span class="op">=</span>logical_shard_id,</span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>        operation_name<span class="op">=</span>operation_name,</span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>        payload<span class="op">=</span>payload</span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    <span class="cf">elif</span> operation_name <span class="kw">in</span> query_ops:</span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Queries go through read_from_shard (ShardNode.Read)</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>      result <span class="op">=</span> transport.read_from_shard(</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>        logical_shard_id<span class="op">=</span>logical_shard_id,</span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>        query_name<span class="op">=</span>operation_name,</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>        payload<span class="op">=</span>payload</span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span>:</span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> {<span class="st">&quot;ok&quot;</span>: <span class="va">False</span>, <span class="st">&quot;error&quot;</span>: <span class="ss">f&quot;Unknown operation: </span><span class="sc">{</span>operation_name<span class="sc">}</span><span class="ss">&quot;</span>}</span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 3. Post-Processing: Inject routing metadata for the client response</span></span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a>    <span class="co"># The .proto messages (e.g., ReserveItemResponse) expect a &#39;served_by&#39; list</span></span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>    shard_addr <span class="op">=</span> router.owner_addr_for_logical_shard(logical_shard_id)</span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>    routing_info <span class="op">=</span> {</span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;logical_shard_id&quot;</span>: logical_shard_id,</span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a>      <span class="st">&quot;storage_addr&quot;</span>: shard_addr</span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Ensure the response format matches what the Gateway RPC expects</span></span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Note: transport calls usually return the &#39;result_json&#39; parsed into a dict</span></span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">isinstance</span>(result, <span class="bu">dict</span>):</span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>      <span class="co"># If the application response expects a list of RoutingInfo</span></span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="st">&quot;served_by&quot;</span> <span class="kw">not</span> <span class="kw">in</span> result <span class="kw">and</span> operation_name <span class="op">!=</span> <span class="st">&quot;CreateInventoryItem&quot;</span>:</span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a>         result[<span class="st">&quot;served_by&quot;</span>] <span class="op">=</span> [routing_info]</span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Create responses usually take a single RoutingInfo object</span></span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>      <span class="cf">elif</span> operation_name <span class="op">==</span> <span class="st">&quot;CreateInventoryItem&quot;</span>:</span>
+<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>         result[<span class="st">&quot;routing&quot;</span>] <span class="op">=</span> routing_info</span>
+<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> result</span>
+<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">&quot;ok&quot;</span>: <span class="va">False</span>, <span class="st">&quot;error&quot;</span>: <span class="st">&quot;Invalid response from shard&quot;</span>}</span>
+<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a>  <span class="cf">except</span> <span class="pp">Exception</span> <span class="im">as</span> e:</span>
+<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a>    <span class="co"># This catches network timeouts or Shard crashes</span></span>
+<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">&quot;ok&quot;</span>: <span class="va">False</span>, <span class="st">&quot;error&quot;</span>: <span class="ss">f&quot;Shard communication error: </span><span class="sc">{</span><span class="bu">str</span>(e)<span class="sc">}</span><span class="ss">&quot;</span>}</span></code></pre></div>
+<h3 id="code-logic-analysis-3"><strong>Code Logic Analysis</strong></h3>
+<ul>
+<li><strong>Partition Key Resolution</strong>: It utilizes
+<code>build_partition_key</code> to extract the <code>item_id</code> and
+<code>choose_logical_shard</code> to determine the destination. This
+implements the <strong>Directory/Hash-based sharding</strong> required
+by the brief.</li>
+<li><strong>Operational Dispatch</strong>: It categorizes incoming
+requests into <strong>Mutations</strong> (which change state) and
+<strong>Queries</strong> (which only read). Mutations are routed to
+<code>apply_to_shard</code> (mapping to a gRPC <code>Apply</code> call),
+while queries go to <code>read_from_shard</code> (mapping to
+<code>Read</code>).</li>
+<li><strong>Metadata Injection</strong>: Post-execution, it enriches the
+response with <code>served_by</code> metadata. This satisfies the
+requirement that the system makes the “shard mapping visible” and allows
+the client to see exactly which physical node handled their
+request.</li>
+</ul>
+<h3 id="missing-dependencies-context-3"><strong>Missing Dependencies
+&amp; Context</strong></h3>
+<ol type="1">
+<li><strong>Transport Protocol</strong>: The <code>transport</code>
+object is a dependency that must implement a communication interface
+(likely gRPC or a similar RPC framework). The logic assumes this
+transport handles the low-level details of networking and
+serialization.</li>
+<li><strong>Retry/Timeout Logic</strong>: While the brief mentions
+“client retries,” this gateway snippet lacks explicit logic to retry a
+request if a shard is temporarily unreachable. It currently catches
+exceptions and returns an “ok: False” error immediately.</li>
+<li><strong>Global Shard Map</strong>: The <code>router</code> object is
+assumed to have a consistent view of which <code>storage_addr</code>
+(IP/Port) corresponds to each <code>logical_shard_id</code>. The snippet
+does not show how this map is updated or synchronized across multiple
+gateways.</li>
+</ol>
+<h3 id="implementation-considerations-3"><strong>Implementation
+Considerations</strong></h3>
+<ul>
+<li><strong>Single-Shard Limitation</strong>: This implementation is
+optimized for <strong>Single-Shard Transactions</strong>. Because it
+routes based on a single <code>item_id</code>, it cannot natively handle
+a transaction that touches two items on different shards (e.g., a
+“Transfer” between items) without a more complex protocol like Two-Phase
+Commit (2PC).</li>
+<li><strong>Error Propagation</strong>: By catching
+<code>Exception</code> and returning it as a JSON error, the gateway
+ensures the system remains available even if a single shard node
+crashes, though that specific request will fail.</li>
+</ul>
+<hr />
+<!--|======[1]======[2]======[3]======[>X<]======[5]======[6]======[7]======|-->
+<h2 id="multi-shard-node-controller-recovery-engine">5. Multi-Shard Node
+Controller &amp; Recovery Engine</h2>
+<h3 id="overview-4"><strong>Overview</strong></h3>
+<p>The <code>ShardNodeManager</code> is the top-level organizational
+component residing on each physical server. It is responsible for the
+<strong>physical-to-logical mapping</strong>—managing multiple logical
+shards within a single process. Its most critical roles are the
+restoration of data integrity during the startup “Recovery” phase and
+the orchestration of the <strong>Durable Commit</strong> path during
+active operations.</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co"># student_impl/shard_context.py (Conceptual integration)</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> student_impl.storage <span class="im">import</span> load_logical_shard_state, save_logical_shard_state</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> student_impl.transactions <span class="im">import</span> apply_local_mutation, run_local_query</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ShardNodeManager:</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, node_id: <span class="bu">int</span>, storage_dir: Path):</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.node_id <span class="op">=</span> node_id</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.storage_dir <span class="op">=</span> storage_dir</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Map of logical_shard_id -&gt; in-memory dict state</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.shards: <span class="bu">dict</span>[<span class="bu">int</span>, <span class="bu">dict</span>] <span class="op">=</span> {}</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.storage_paths: <span class="bu">dict</span>[<span class="bu">int</span>, Path] <span class="op">=</span> {}</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> recover_shards(<span class="va">self</span>, assigned_shard_ids: <span class="bu">list</span>[<span class="bu">int</span>]):</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">&quot;&quot;&quot;Reloads all assigned logical shards from disk on startup.&quot;&quot;&quot;</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> shard_id <span class="kw">in</span> assigned_shard_ids:</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>      path <span class="op">=</span> <span class="va">self</span>.storage_dir <span class="op">/</span> <span class="ss">f&quot;shard_</span><span class="sc">{</span>shard_id<span class="sc">}</span><span class="ss">.json&quot;</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>      <span class="va">self</span>.storage_paths[shard_id] <span class="op">=</span> path</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>      <span class="co"># Load from disk using the Stage 1/Storage interface</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>      state <span class="op">=</span> load_logical_shard_state(path)</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>      <span class="co"># If disk is empty, initialize the schema</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> state:</span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>        state <span class="op">=</span> {<span class="st">&quot;inventory&quot;</span>: {}}</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>      <span class="va">self</span>.shards[shard_id] <span class="op">=</span> state</span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f&quot;Node </span><span class="sc">{</span><span class="va">self</span><span class="sc">.</span>node_id<span class="sc">}</span><span class="ss"> recovered </span><span class="sc">{</span><span class="bu">len</span>(<span class="va">self</span>.shards)<span class="sc">}</span><span class="ss"> shards.&quot;</span>)</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>  <span class="kw">def</span> handle_apply(<span class="va">self</span>, shard_id: <span class="bu">int</span>, op: <span class="bu">str</span>, payload: <span class="bu">dict</span>) <span class="op">-&gt;</span> <span class="bu">dict</span>:</span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>    <span class="co">&quot;&quot;&quot;The entry point for the ShardNode.Apply gRPC call.&quot;&quot;&quot;</span></span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> shard_id <span class="kw">not</span> <span class="kw">in</span> <span class="va">self</span>.shards:</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>      <span class="cf">raise</span> <span class="pp">ValueError</span>(<span class="ss">f&quot;Shard </span><span class="sc">{</span>shard_id<span class="sc">}</span><span class="ss"> not hosted on this node&quot;</span>)</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 1. Execute mutation (Stage 2 Logic)</span></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>    <span class="co"># apply_local_mutation handles the internal SHARD_LOCK</span></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>    result <span class="op">=</span> apply_local_mutation(<span class="va">self</span>.shards[shard_id], op, payload)</span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>    <span class="co"># 2. Immediate Durability (The &#39;MVP&#39; Flush)</span></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Since apply_local_mutation modified the dict, we persist immediately.</span></span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>    save_logical_shard_state(<span class="va">self</span>.storage_paths[shard_id], <span class="va">self</span>.shards[shard_id])</span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> result</span></code></pre></div>
+<h3 id="code-logic-analysis-4"><strong>Code Logic Analysis</strong></h3>
+<ul>
+<li><strong>The Recovery Flow</strong>: The <code>recover_shards</code>
+method is the implementation of the “Failure Handling” requirement from
+the project brief. It iterates through assigned <code>shard_ids</code>,
+locates their specific <code>.json</code> files on disk, and
+reconstructs the in-memory state. This ensures that a node can crash and
+restart without violating the durability of previously committed
+transactions.</li>
+<li><strong>Orchestrated Apply</strong>: The <code>handle_apply</code>
+method serves as the bridge between the gRPC entry point and the local
+mutation logic. It performs a vital three-step sequence:
+<ol type="1">
+<li><strong>Context Validation</strong>: Confirms the node is actually
+responsible for the requested shard ID.</li>
+<li><strong>State Transition</strong>: Delegates the logic to
+<code>apply_local_mutation</code>.</li>
+<li><strong>Atomic Persistence</strong>: Immediately flushes the mutated
+state to disk via <code>save_logical_shard_state</code> <em>before</em>
+returning success to the Gateway.</li>
+</ol></li>
+<li><strong>Data Isolation</strong>: By maintaining a
+<code>shards</code> dictionary (logical_id -&gt; state) and a
+<code>storage_paths</code> dictionary, it ensures that logical shards
+remain independent and do not leak data across boundaries.</li>
+</ul>
+<h3 id="missing-dependencies-context-4"><strong>Missing Dependencies
+&amp; Context</strong></h3>
+<ol type="1">
+<li><strong>Shard Assignment Mechanism</strong>: The
+<code>assigned_shard_ids</code> are passed in during recovery, but the
+snippet does not show the “Membership Provider” or configuration file
+that tells this node which shards it owns.</li>
+<li><strong>Graceful Shutdown</strong>: There is no logic for a “Clean
+Exit.” While the system is designed to handle crashes, a production
+implementation would include a way to flush all shards and release file
+handles gracefully.</li>
+<li><strong>Concurrency Mapping</strong>: As noted in the mutation
+documentation, while <code>apply_local_mutation</code> uses a lock, the
+<code>ShardNodeManager</code> needs to ensure that the
+<code>SHARD_LOCK</code> is correctly shared or partitioned so that
+operations on Shard 1 do not unnecessarily block operations on Shard
+2.</li>
+</ol>
+<h3 id="implementation-considerations-4"><strong>Implementation
+Considerations</strong></h3>
+<ul>
+<li><strong>Durability Guarantee</strong>: This manager enforces the
+“MVP Flush.” By calling <code>save</code> inside
+<code>handle_apply</code>, it guarantees that if the Gateway receives an
+“OK” response, the data is physically on disk. This is the
+“All-or-Nothing” behavior required by the brief.</li>
+<li><strong>Disk I/O Contention</strong>: Because all logical shards
+might share the same physical disk (<code>storage_dir</code>), high
+write volume across multiple shards can lead to I/O wait times. The
+manager is the logical place where one would eventually implement a more
+sophisticated write-ahead log (WAL) to mitigate this.</li>
+</ul>
+<hr />
+<!--|======[1]======[2]======[3]======[>X<]======[5]======[6]======[7]======|-->
+<h1 id="end">END</h1>
+<a href="transaction-visualizer.html"> Transaction Prototype </a>
+</body>
+</html>

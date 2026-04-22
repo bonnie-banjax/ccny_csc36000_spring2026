@@ -42,10 +42,6 @@ cluster.json
 .DS_Store
 Thumbs.db
 
-# -------------------------
-# Optional: visualizer / temp outputs
-# -------------------------
-*.html
 
 # -------------------------
 # Misc
