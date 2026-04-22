@@ -3,9 +3,13 @@ from __future__ import annotations
 import pytest
 
 
-def test_inventory_reservation_preserves_availability(selected_application, gateway_stub):
+def _skip_unless_inventory(selected_application: str) -> None:
     if selected_application != "inventory":
         pytest.skip("inventory tests only run when SELECTED_APPLICATION == 'inventory'")
+
+
+def test_inventory_reservation_preserves_availability(selected_application, gateway_stub):
+    _skip_unless_inventory(selected_application)
 
     gateway_pb2, stub = gateway_stub
     stub.CreateInventoryItem(gateway_pb2.CreateInventoryItemRequest(item_id="item-1", quantity=5), timeout=5.0)
@@ -21,8 +25,7 @@ def test_inventory_reservation_preserves_availability(selected_application, gate
 
 
 def test_inventory_prevents_over_allocation(selected_application, gateway_stub):
-    if selected_application != "inventory":
-        pytest.skip("inventory tests only run when SELECTED_APPLICATION == 'inventory'")
+    _skip_unless_inventory(selected_application)
 
     gateway_pb2, stub = gateway_stub
     stub.CreateInventoryItem(gateway_pb2.CreateInventoryItemRequest(item_id="item-2", quantity=1), timeout=5.0)
@@ -44,8 +47,7 @@ def test_inventory_prevents_over_allocation(selected_application, gateway_stub):
 
 
 def test_inventory_happy_path_release_restores_availability(selected_application, gateway_stub):
-    if selected_application != "inventory":
-        pytest.skip("inventory tests only run when SELECTED_APPLICATION == 'inventory'")
+    _skip_unless_inventory(selected_application)
 
     gateway_pb2, stub = gateway_stub
     stub.CreateInventoryItem(gateway_pb2.CreateInventoryItemRequest(item_id="item-3", quantity=4), timeout=5.0)
@@ -68,8 +70,7 @@ def test_inventory_happy_path_release_restores_availability(selected_application
 
 
 def test_inventory_unhappy_path_unknown_reservation_does_not_change_state(selected_application, gateway_stub):
-    if selected_application != "inventory":
-        pytest.skip("inventory tests only run when SELECTED_APPLICATION == 'inventory'")
+    _skip_unless_inventory(selected_application)
 
     gateway_pb2, stub = gateway_stub
     stub.CreateInventoryItem(gateway_pb2.CreateInventoryItemRequest(item_id="item-4", quantity=2), timeout=5.0)

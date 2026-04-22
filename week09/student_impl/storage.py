@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +13,13 @@ def load_logical_shard_state(storage_path: Path) -> dict[str, Any]:
     """
     if not storage_path.exists():
         return {}
-    raw_text = storage_path.read_text()
-    if not raw_text.strip():
+    raw_json_text = storage_path.read_text()
+    if not raw_json_text.strip():
         return {}
-    loaded = json.loads(raw_text)
-    if not isinstance(loaded, dict):
+    loaded_state = json.loads(raw_json_text)
+    if not isinstance(loaded_state, dict):
         raise ValueError(f"Expected top-level JSON object in {storage_path}")
-    return loaded
+    return loaded_state
 
 
 def save_logical_shard_state(storage_path: Path, state: dict[str, Any]) -> None:
@@ -27,12 +28,20 @@ def save_logical_shard_state(storage_path: Path, state: dict[str, Any]) -> None:
     """
     storage_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = storage_path.with_suffix(f"{storage_path.suffix}.tmp")
-    payload = json.dumps(state, indent=2, sort_keys=True)
-    with temporary_path.open("w") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary_path, storage_path)
+    serialized_state = json.dumps(state, indent=2, sort_keys=True)
+    with temporary_path.open("w") as tmp_handle:
+        tmp_handle.write(serialized_state)
+        tmp_handle.flush()
+        os.fsync(tmp_handle.fileno())
+    for attempt in range(8):
+        try:
+            os.replace(temporary_path, storage_path)
+            return
+        except PermissionError:
+            # Windows can transiently hold a lock on the destination file.
+            if not os.name == "nt" or attempt == 7:
+                raise
+            time.sleep(0.02 * (2**attempt))
 
 
 def export_logical_shard_state(state: dict[str, Any]) -> dict[str, Any]:
