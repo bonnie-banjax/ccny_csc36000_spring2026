@@ -1,4 +1,7 @@
+#RUN: python test_sharding_local.py
+#Checks to see the same item always maps to the same logical shard
 '''
+
 from student_impl.sharding import build_partition_key, choose_logical_shard
 
 payload = {
@@ -16,7 +19,9 @@ print("Shard again:", choose_logical_shard(key))
 
 '''
 
-
+# Sharding distributation test
+# RUN: python test_sharding_local.py
+# Checks to hash-based sharding is reasonably balanced
 from collections import Counter
 from student_impl.sharding import choose_logical_shard
 

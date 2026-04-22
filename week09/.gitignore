@@ -1,21 +1,54 @@
+# -------------------------
 # Python cache
+# -------------------------
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
+# -------------------------
 # Build artifacts
+# -------------------------
 *.egg-info/
 build/
 dist/
 
+# -------------------------
+# Runtime / generated files (IMPORTANT for this project)
+# -------------------------
+.runtime/
+week09/.runtime/
+week09/.runtime/data/
+
+.runtime_pb/
+week09/.runtime_pb/
+
+generated/
+
+# -------------------------
+# Logs
+# -------------------------
+*.log
+cluster.json
+
+# -------------------------
 # VSCode
+# -------------------------
 .vscode/
 
-# OS
+# -------------------------
+# OS files
+# -------------------------
 .DS_Store
 Thumbs.db
 
-# logs
-*.log
-cluster.json
+# -------------------------
+# Optional: visualizer / temp outputs
+# -------------------------
+*.html
+
+# -------------------------
+# Misc
+# -------------------------
+*.swp
+*.swo

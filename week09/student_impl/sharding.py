@@ -15,8 +15,8 @@ def build_partition_key(application_name: str, operation_name: str, payload: dic
     selected application's workload and explain the tradeoffs in
     student_impl/README.md.
 
-    For the inventory application, shard by item_id so that all data for one
-    inventory item stays together on one logical shard.
+    Shard by item_id so that all data for one inventory item stays together on one logical shard.
+    This function extracts the partition key from the request.
     """
     if application_name != "inventory":
         raise NotImplementedError(
@@ -37,8 +37,9 @@ def choose_logical_shard(partition_key: str, total_logical_shards: int = TOTAL_L
     The tests will check that your sharding function spreads a representative
     set of keys relatively evenly across the available logical shards.
 
-    Using a stable hash so the same key always maps to the same shard across 
-    restarts and across different Python processes.
+    Using a stable hash so the same key always maps to the same shard across restarts and across different Python processes.
+    This function hashes the partition key and maps it to one of the logical shards using modulo.
+    Hash-based sharding because it distributes items evenly across shards
     """
     if not isinstance(partition_key, str) or not partition_key:
         raise ValueError("partition_key must be a non-empty string")
