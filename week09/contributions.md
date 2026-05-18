@@ -12,3 +12,23 @@
 - Contributed to end-to-end validation
   - Verified routing consistency through client commands and cluster responses
   - Ensured that sharding integrates correctly with the transaction and storage layers
+
+
+## Andrew Mobus
+
+- Transactions:
+  - proof of correctness & understanding model (`docs/transaction-visualizer.html`)
+  - initial transaction implementation (`student_impl/transactions.py`) re:
+    - Concurrency Control via thread-locking mutex (SHARD_LOCK)
+    - Read Isolation & Durability through atomic flush to disk
+
+- Integration & Testing:
+  - validation & iterative redevelopment of initial transaction logic
+  - routine integrations testing to validate final merge stages
+
+- Git Janitor:
+  - ensured team followed proper git best practices
+  - implemented merge controls & pull request reviews on main
+
+
+## 
